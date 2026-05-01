@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 from .database import Article, ArticleScore, create_tables, get_db
-from .news_fetcher import ALLOWED_OUTLETS
+from .llm_analyzer import LLMAnalyzer
+from .news_fetcher import ALLOWED_OUTLETS, NewsFetcherError, fetch_and_store_articles
 from .nlp_pipeline import NLPPipeline
 
 _nlp_pipeline: NLPPipeline | None = None
@@ -44,40 +45,19 @@ class ScoresResponse(BaseModel):
     error: Optional[str]
 
 
+class AnalyzeResponse(BaseModel):
+    success: bool
+    data: dict
+    error: Optional[str]
+
+
 def get_nlp_pipeline() -> NLPPipeline:
     if _nlp_pipeline is None:
         return NLPPipeline.get_instance()
     return _nlp_pipeline
 
 
-@router.get("/health", response_model=HealthResponse)
-def health_check(db: Session = Depends(get_db)) -> HealthResponse:
-    db.execute(text("SELECT 1"))
-    return {
-        "success": True,
-        "data": {
-            "service": "newslens-backend",
-            "status": "ok",
-            "debug": os.getenv("DEBUG", "False"),
-        },
-        "error": None,
-    }
-
-
-@router.get("/scores", response_model=ScoresResponse)
-def get_scores(
-    topic: str = Query(..., min_length=1),
-    db: Session = Depends(get_db),
-    nlp_pipeline: NLPPipeline = Depends(get_nlp_pipeline),
-) -> ScoresResponse:
-    normalized_topic = topic.strip()
-    if not normalized_topic:
-        raise HTTPException(status_code=400, detail="Topic must not be empty.")
-
-    score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
-    if score_result["article_count"] == 0:
-        return {"success": True, "data": {"topic": normalized_topic, "outlets": []}, "error": None}
-
+def _build_outlet_scores(topic: str, db: Session) -> dict:
     rows = db.execute(
         select(
             Article.id,
@@ -89,7 +69,7 @@ def get_scores(
             ArticleScore.created_at,
         )
         .join(ArticleScore, ArticleScore.article_id == Article.id)
-        .where(Article.topic == normalized_topic)
+        .where(Article.topic == topic)
         .order_by(Article.id.asc(), desc(ArticleScore.created_at))
     ).all()
 
@@ -159,12 +139,97 @@ def get_scores(
         outlets.append(stats)
 
     return {
+        "topic": topic,
+        "article_count": len(latest_by_article),
+        "outlet_count": len(outlets),
+        "outlets": outlets,
+    }
+
+
+@router.get("/health", response_model=HealthResponse)
+def health_check(db: Session = Depends(get_db)) -> HealthResponse:
+    db.execute(text("SELECT 1"))
+    return {
+        "success": True,
+        "data": {
+            "service": "newslens-backend",
+            "status": "ok",
+            "debug": os.getenv("DEBUG", "False"),
+        },
+        "error": None,
+    }
+
+
+@router.get("/scores", response_model=ScoresResponse)
+def get_scores(
+    topic: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    nlp_pipeline: NLPPipeline = Depends(get_nlp_pipeline),
+) -> ScoresResponse:
+    normalized_topic = topic.strip()
+    if not normalized_topic:
+        raise HTTPException(status_code=400, detail="Topic must not be empty.")
+
+    score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
+    if score_result["article_count"] == 0:
+        return {"success": True, "data": {"topic": normalized_topic, "outlets": []}, "error": None}
+
+    return {
+        "success": True,
+        "data": _build_outlet_scores(normalized_topic, db),
+        "error": None,
+    }
+
+
+@router.get("/analyze", response_model=AnalyzeResponse)
+async def analyze_topic(
+    topic: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    nlp_pipeline: NLPPipeline = Depends(get_nlp_pipeline),
+) -> AnalyzeResponse:
+    normalized_topic = topic.strip()
+    if not normalized_topic:
+        raise HTTPException(status_code=400, detail="Topic must not be empty.")
+
+    fetch_meta: dict = {"cached": True, "count": 0, "saved_urls": []}
+    try:
+        # Always run through fetcher so its 24-hour cache policy decides freshness.
+        fetch_meta = await fetch_and_store_articles(normalized_topic, db)
+    except NewsFetcherError as exc:
+        fetch_meta = {"cached": True, "count": 0, "saved_urls": [], "warning": str(exc)}
+
+    score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
+    score_data = _build_outlet_scores(normalized_topic, db)
+
+    llm_result = LLMAnalyzer().generate_missing_angle(normalized_topic, db)
+    llm_data = llm_result.get("data", {})
+
+    outlet_missing_angles = llm_data.get("outlet_missing_angles", {})
+    outlets_with_missing_angle = []
+    for outlet in score_data["outlets"]:
+        source = outlet["source"]
+        merged_outlet = dict(outlet)
+        merged_outlet["missing_angle"] = outlet_missing_angles.get(source)
+        outlets_with_missing_angle.append(merged_outlet)
+
+    return {
         "success": True,
         "data": {
             "topic": normalized_topic,
-            "article_count": len(latest_by_article),
-            "outlet_count": len(outlets),
-            "outlets": outlets,
+            "fetch": fetch_meta,
+            "scoring": {
+                "article_count": score_result["article_count"],
+                "scored_count": score_result["scored_count"],
+            },
+            "missing_angle": {
+                "value": llm_data.get("missing_angle"),
+                "confidence": llm_data.get("confidence"),
+                "from_cache": llm_data.get("from_cache", False),
+                "error": llm_data.get("error", False),
+                "error_message": llm_data.get("error_message"),
+            },
+            "outlet_count": score_data["outlet_count"],
+            "outlets": outlets_with_missing_angle,
         },
         "error": None,
     }

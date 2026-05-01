@@ -98,3 +98,50 @@ This file tracks all major development progress, decisions, challenges, and solu
 ### Status
 - Phase 2 implementation complete and validated locally
 - Next step: Phase 3 Claude missing-angle integration into `/analyze`
+
+## [2026-04-30] - Phase 3: Claude LLM Integration
+
+### What Was Done
+- Replaced the Phase 3 placeholder in `backend/llm_analyzer.py` with a production `LLMAnalyzer` using the Anthropic Python SDK and model `claude-sonnet-4-6`.
+- Added module-level `MISSING_ANGLE_SYSTEM_PROMPT` constant and implemented strict JSON-only prompting for missing-angle generation.
+- Implemented pre-LLM context shaping: one article summary per outlet, each clipped to a maximum of 150 words, with a total context window of up to 8 outlets.
+- Added cache-first logic against `topic_analysis` for same-day topic analysis reuse before any Claude API call.
+- Added resilient fallback for Claude failures: full traceback logging, `missing_angle: null`, error flag propagation, and no crash behavior.
+- Implemented `GET /analyze?topic=...` in `backend/main.py` to return combined output with fetch metadata, sentiment/bias scoring, and missing-angle data merged per outlet.
+
+### Technical Decisions
+- Kept route handlers thin by extracting score aggregation into `_build_outlet_scores` and encapsulating LLM logic in `LLMAnalyzer`.
+- Reused existing outlet list (`ALLOWED_OUTLETS`) to enforce stable output shape, including missing-angle placeholders for all configured outlets.
+- Stored structured Claude output in `topic_analysis.llm_summary` as JSON text while retaining top-level `missing_angle` in its dedicated column.
+- Preserved existing scoring behavior (`score_topic_articles`) and layered LLM analysis on top without changing Phase 2 contracts.
+
+### Challenges & Solutions
+- Problem: Runtime validation in this environment could not load HuggingFace models due blocked remote access, and Anthropic network calls were unavailable.
+- Solution: Verified `/analyze` response shape via FastAPI `TestClient` with an NLP dependency override while exercising real endpoint logic, confirming combined payload and LLM failure fallback handling.
+- Problem: The requested `003-claude-llm.mdc` file name did not match repository rule numbering.
+- Solution: Applied Claude integration constraints from the available Claude rule file and implemented the requested system prompt constant in module scope.
+
+### Status
+- Phase 3 backend integration is implemented and wired into `/analyze`
+- Verified response includes sentiment, bias, and missing-angle components in one envelope
+- LLM/network-dependent fields gracefully degrade when external access is unavailable
+
+## [2026-04-30] - Phase 3: Resilience Test Hardening
+
+### What Was Done
+- Added `backend/tests/test_analyze_resilience.py` with two targeted tests to protect `/analyze` and LLM fallback behavior.
+- Added test coverage for `LLMAnalyzer.generate_missing_angle(...)` to ensure Claude-call exceptions return safe fallback output (`missing_angle: null`, error flag set) without raising.
+- Added integration-style `/analyze` endpoint test with dependency overrides to confirm endpoint remains stable and returns combined payload even when missing-angle generation fails.
+- Installed and pinned `pytest==8.4.2` in `backend/requirements.txt` for reproducible local test execution.
+
+### Technical Decisions
+- Used in-memory SQLite with `StaticPool` to keep one shared test database across request threads used by FastAPI `TestClient`.
+- Mocked external boundaries (`fetch_and_store_articles`, NLP dependency, and LLM generation) so tests validate contract behavior rather than third-party network availability.
+
+### Challenges & Solutions
+- Problem: Initial in-memory SQLite test setup failed with `no such table` due per-connection isolation.
+- Solution: Switched test engine to `sqlite://` + `StaticPool` + `check_same_thread=False` so schema/data are shared across test and request execution.
+
+### Status
+- Protective regression tests are now in place and passing
+- Current resilience guarantee: `/analyze` stays available and returns structured output when LLM calls fail
