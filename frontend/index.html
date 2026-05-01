@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NewsLens Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand">NewsLens</div>
+          <p class="brand-tag">Truth in headlines. Bias in framing.</p>
+        </div>
+        <nav>
+          <a href="#">Dashboard</a>
+          <a href="#">Topics</a>
+          <a href="#">Outlets</a>
+          <a href="#">Methodology</a>
+        </nav>
+        <button class="cta">Start Analysis</button>
+      </header>
+
+      <section class="hero">
+        <p class="eyebrow">NewsLens editorial intelligence</p>
+        <h1>Read the same story through every bias line.</h1>
+        <p class="lede">
+          NewsLens maps truth signals, bias direction, and narrative framing so you can compare how
+          outlets shape the same topic.
+        </p>
+      </section>
+
+      <section class="bias-hero card">
+        <div class="section-head">
+          <h2>Bias Spectrum</h2>
+          <span>Prominent signal for this topic</span>
+        </div>
+        <div class="spectrum-track">
+          <div class="stop left"></div>
+          <div class="stop center"></div>
+          <div class="stop right"></div>
+          <div class="marker marker-left">CNN</div>
+          <div class="marker marker-center">Reuters</div>
+          <div class="marker marker-right">Fox</div>
+        </div>
+        <div class="spectrum-legend">
+          <p><span class="dot blue"></span>Left-leaning</p>
+          <p><span class="dot gray"></span>Center / neutral</p>
+          <p><span class="dot red"></span>Right-leaning</p>
+        </div>
+      </section>
+
+      <section class="outlets-grid">
+        <article class="card outlet-card">
+          <h3>CNN</h3>
+          <p class="badge blue-bg">Left-leaning</p>
+          <p class="body">Strong climate justice framing, policy urgency, and social impact focus.</p>
+        </article>
+        <article class="card outlet-card">
+          <h3>Reuters</h3>
+          <p class="badge gray-bg">Center / neutral</p>
+          <p class="body">Fact-led summary with minimal editorial language and broad source balance.</p>
+        </article>
+        <article class="card outlet-card">
+          <h3>Fox News</h3>
+          <p class="badge red-bg">Right-leaning</p>
+          <p class="body">Emphasis on economic tradeoffs and policy criticism from conservative voices.</p>
+        </article>
+      </section>
+
+      <section class="missing-angle card">
+        <p class="eyebrow">Editorial insight</p>
+        <h2>Missing Angle</h2>
+        <p>
+          Most coverage tracks policy conflict but misses ground-level evidence. The underreported
+          truth is how local communities are adapting in real time, especially in lower-income regions.
+        </p>
+      </section>
+
+      <section class="timeline card">
+        <div class="section-head">
+          <h2>Narrative Timeline</h2>
+          <span>Data journalism view of sentiment + bias over time</span>
+        </div>
+        <div class="chart">
+          <div class="bar-group">
+            <div class="bar blue-h" style="height: 40%"></div>
+            <div class="bar gray-h" style="height: 52%"></div>
+            <div class="bar red-h" style="height: 30%"></div>
+            <p>Apr 25</p>
+          </div>
+          <div class="bar-group">
+            <div class="bar blue-h" style="height: 60%"></div>
+            <div class="bar gray-h" style="height: 46%"></div>
+            <div class="bar red-h" style="height: 36%"></div>
+            <p>Apr 26</p>
+          </div>
+          <div class="bar-group">
+            <div class="bar blue-h" style="height: 50%"></div>
+            <div class="bar gray-h" style="height: 60%"></div>
+            <div class="bar red-h" style="height: 42%"></div>
+            <p>Apr 27</p>
+          </div>
+          <div class="bar-group">
+            <div class="bar blue-h" style="height: 74%"></div>
+            <div class="bar gray-h" style="height: 52%"></div>
+            <div class="bar red-h" style="height: 58%"></div>
+            <p>Apr 28</p>
+          </div>
+          <div class="bar-group">
+            <div class="bar blue-h" style="height: 66%"></div>
+            <div class="bar gray-h" style="height: 64%"></div>
+            <div class="bar red-h" style="height: 56%"></div>
+            <p>Apr 29</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>
