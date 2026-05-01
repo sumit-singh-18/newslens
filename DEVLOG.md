@@ -44,3 +44,29 @@ This file tracks all major development progress, decisions, challenges, and solu
 ### Status
 - Phase 1 backend foundation complete
 - Pending final live ingestion verification once valid `NEWSAPI_KEY` is provided
+
+## [2026-04-30] - Phase 1: Data Pipeline (Verification Complete)
+
+### What Was Done
+- Completed end-to-end validation for Phase 1 after environment keys were configured
+- Verified database initialization creates `articles`, `article_scores`, and `topic_analysis` tables as expected
+- Verified required `articles` indexes for `topic`, `fetched_at`, and `snapshot_date`
+- Ran live NewsAPI ingestion for topic `climate change` and confirmed successful persistence to SQLite
+- Confirmed health check returns the expected API envelope format
+
+### Technical Decisions
+- Kept route logic minimal and used service-style separation (`news_fetcher.py`) for easier extension toward `/analyze`
+- Used package-relative imports in backend modules to support reliable module execution
+- Maintained strict dependency pinning in `backend/requirements.txt` to keep local/dev behavior reproducible
+- Retained 24-hour cache-first behavior to reduce NewsAPI usage and enforce rate-limit-safe ingestion
+
+### Challenges & Solutions
+- Problem: Initial server start attempts failed due to interpreter path and import resolution issues.
+- Solution: Corrected execution path assumptions and switched to package-relative imports.
+- Problem: Live external fetch initially failed under restricted network execution.
+- Solution: Re-ran ingestion with proper network permissions and confirmed successful article retrieval/storage.
+
+### Status
+- Phase 1 is complete and validated
+- Current verified state: `climate change` ingestion saved 25 articles to SQLite
+- Next step: begin Phase 2 NLP sentiment/bias pipeline integration
