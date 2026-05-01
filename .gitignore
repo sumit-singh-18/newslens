@@ -34,6 +34,9 @@ wheels/
 *.db
 *.sqlite3
 
+# Virtualenv
+.venv/
+
 # Logs
 *.log
 logs/
@@ -41,3 +44,5 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+.hf-cache/

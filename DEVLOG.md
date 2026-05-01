@@ -70,3 +70,31 @@ This file tracks all major development progress, decisions, challenges, and solu
 - Phase 1 is complete and validated
 - Current verified state: `climate change` ingestion saved 25 articles to SQLite
 - Next step: begin Phase 2 NLP sentiment/bias pipeline integration
+
+## [2026-04-30] - Phase 2: NLP Layer
+
+### What Was Done
+- Replaced Phase 1 NLP placeholder with a production `NLPPipeline` that loads HuggingFace sentiment (`cardiffnlp/twitter-roberta-base-sentiment`) and political bias (`bucketresearch/politicalBiasBERT`) models once as a singleton.
+- Added robust text preprocessing for NLP inference (HTML stripping, URL removal, whitespace normalization).
+- Added per-model 512-token truncation before inference to keep inputs within model limits.
+- Implemented batch analysis for all topic articles in one pass and persisted results to `article_scores` (scores + human-readable labels + raw score maps).
+- Added `GET /scores?topic=...` endpoint that re-scores topic articles and returns aggregated per-outlet averages and dominant labels.
+- Verified Phase 2 on existing `climate change` dataset (25 scored rows persisted, 0 null score/label fields, endpoint returned 5 outlets including empty-outlet placeholder when no articles exist).
+
+### Technical Decisions
+- Used a thread-safe singleton (`NLPPipeline.get_instance()`) and FastAPI lifespan initialization so models are loaded once at startup, never per request.
+- Kept route logic thin while pushing scoring logic into service-style methods in `nlp_pipeline.py`.
+- Included all tracked outlets in `/scores` output for consistent frontend shape, even when an outlet has zero articles in the current snapshot.
+- Normalized Cardiff sentiment labels (`LABEL_0/1/2`) to `Negative/Neutral/Positive` for human readability.
+
+### Challenges & Solutions
+- Problem: HuggingFace model download failed in restricted execution and default cache path handling.
+- Solution: Used local HF cache path and full-permission execution for model bootstrap during verification.
+- Problem: Python 3.9 runtime rejected `zip(..., strict=True)`.
+- Solution: Replaced with explicit length checks and standard `zip()` to preserve safety while remaining Python 3.9-compatible.
+- Problem: FastAPI startup imported DB configuration before `.env` load, leading to wrong DB resolution.
+- Solution: Reordered imports in `main.py` so `load_dotenv` runs before database module import.
+
+### Status
+- Phase 2 implementation complete and validated locally
+- Next step: Phase 3 Claude missing-angle integration into `/analyze`
