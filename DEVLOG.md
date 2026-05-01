@@ -145,3 +145,49 @@ This file tracks all major development progress, decisions, challenges, and solu
 ### Status
 - Protective regression tests are now in place and passing
 - Current resilience guarantee: `/analyze` stays available and returns structured output when LLM calls fail
+
+## [2026-05-01] - Phase 4a: Frontend Functional Dashboard
+
+### What Was Done
+- Replaced the static frontend with a fully interactive React dashboard in `frontend/app.js` (search, query-driven sections, and responsive layout).
+- Implemented functional top navigation links (`Dashboard`, `Topics`, `Outlets`, `Methodology`) with dashboard as default active.
+- Added hero search workflow with `Start Analysis` scroll/focus behavior, inline error handling, and skeleton loading states during fetch.
+- Wired topic analysis to `GET /analyze?topic=...` using TanStack Query and introduced search history persistence (last 5 topics) via `localStorage` chips.
+- Implemented dynamic dashboard modules: bias spectrum markers, outlet cards, headline comparison, emotional intensity, sentiment distribution grouped bars, 7-day timeline lines, and prominent missing-angle callout.
+- Extended backend `GET /analyze` payload in `backend/main.py` with per-outlet latest `headline`, a 7-day `timeline`, and `missing_angle.reasoning` to support required frontend visualization features.
+
+### Technical Decisions
+- Used browser-native ESM imports (`esm.sh`) plus runtime JSX transpilation in `frontend/index.html` because local `npm` was unavailable in this environment.
+- Kept TanStack Query as the single fetch layer for analysis requests to centralize loading/error/data state management.
+- Reused backend outlet ordering to keep chart colors and cross-section outlet mapping consistent.
+- Added backend timeline aggregation from persisted article snapshots and score records to avoid frontend-side data fabrication.
+
+### Challenges & Solutions
+- Problem: Frontend package manager tooling (`npm`) was not available, blocking a standard Vite/Tailwind setup.
+- Solution: Implemented React + TanStack Query + Recharts with CDN/ESM runtime loading so the dashboard remains fully functional without local Node package installation.
+- Problem: Original `/analyze` response did not include explicit headline comparison data or weekly timeline series needed by the UI requirements.
+- Solution: Added lightweight backend response enrichments (latest outlet headline + 7-day bias timeline + reasoning text) while preserving the existing response envelope.
+
+### Status
+- Phase 4a frontend functionality is implemented with resilient loading/error/empty states and responsive behavior.
+- Next step: run full visual QA against `ui-reference.png` in-browser and perform deployment-readiness checks for Phase 5.
+
+## [2026-05-01] - Phase 4a: Frontend Constitution Alignment (Rule v1.3)
+
+### What Was Done
+- Re-reviewed the updated frontend constitution in `005-frontend-react.mdc` and re-applied styling/component requirements to the working dashboard.
+- Refactored `frontend/app.js` into explicit modular components: `Header`, `Hero`, `BiasSpectrum`, `OutletGrid`, and `Timeline`.
+- Updated neutral/balance visual mappings to the strict center gray `#9CA3AF` in spectrum and chart usage.
+- Applied the Acctual-style visual system in `frontend/styles.css`: 24px card/input radii, glassmorphism cards (`rgba(255,255,255,0.7)` + `backdrop-filter: blur(12px)`), soft spread shadows, and 8px-grid-compliant margin/padding values.
+
+### Technical Decisions
+- Preserved TanStack Query data flow and existing API contracts while changing component architecture and styling, minimizing regression risk.
+- Kept responsive breakpoints and skeleton loading behavior intact while adapting spacing and visual tokens to the new design constitution.
+
+### Challenges & Solutions
+- Problem: Existing UI already satisfied functional requirements but diverged from updated aesthetic constraints (radius, spacing system, neutral color token, component naming structure).
+- Solution: Performed targeted refactor + design-token pass rather than rewriting flow logic, so behavior remained stable while design rules were enforced.
+
+### Status
+- Dashboard is now aligned with updated frontend rule set (v1.3) and remains fully functional.
+- Next step: optional final pixel-polish pass directly against browser render for exact screenshot parity before deployment.
