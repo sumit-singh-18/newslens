@@ -322,3 +322,23 @@ This file tracks all major development progress, decisions, challenges, and solu
 
 ### Notes
 - NewsAPI **`sources`** IDs must all be valid or the request fails; pool matches the product brief (`the-guardian-uk`, etc.). Adjust IDs against NewsAPI’s sources index if a publisher slug errors at runtime.
+
+## [2026-05-01] - Phase 1 follow-ups: outlets, blended bias, framing
+
+### Issue 1 — only ~3 outlets from NewsAPI
+- **`MIN_ARTICLES_PER_SOURCE`** is **1** (single article qualifies per outlet).
+- After the initial **`/v2/everything`** call (15-source pool), if fewer than **5** qualifying sources, the fetcher calls **`/v2/top-headlines?country=us&q=...`**, then if still short, **`/v2/everything`** again **without** the `sources` filter so any publisher can fill slots. **`[NewsLens]`** logs list **article counts per source** after each stage.
+- **URL dedupe**: before scoring, article rows whose **`url`** already exists for **another** topic are dropped to avoid SQLite **`UNIQUE`** on `articles.url` when the same story appears across searches.
+
+### Issue 2 — all outlets looked “CENTER” from HF alone
+- **`NLPPipeline.analyze_batch`** blends **`final_axis = 0.4 * hf_axis + 0.6 * keyword_axis`**. HF contributes a probability-weighted axis from **`politicalBiasBERT`** labels; **`keyword_axis`** uses the specified left/right keyword lists (substring multi-word phrases, `\b…\b` for single words where appropriate). **`raw_scores["bias_blend"]`** stores **`hf_axis`**, **`keyword_axis`**, **`final_axis`**.
+- **`bias_label_from_axis`** in **`bias_utils.py`** maps axis → **Left / Center / Right** (thresholds **0.47** / **0.51**); per-article labels and outlet **`dominant_bias_label`** both derive from this so the spectrum matches **`avg_bias_score`**.
+- **`NLPPipeline.rescore_all_articles(db)`** replaces all **`article_scores`** using the new blend (run after deploy to refresh historical rows).
+
+### Issue 3 — empty framing summaries
+- **`framing_extract`**: **`SENTENCE_MIN_LEN = 10`**, structured **`logging`** for sentence counts, per-sentence charges, and neutral fallback; if all charges ≈ 0, uses the **first k** sentences; **`fallback_framing_best_article`** takes the **first two sentences** of the article with highest sentiment charge.
+- **`news_fetcher`** chains extractive → fallback → corpus/title fallbacks; **`outletFramingBody`** in **`frontend/app.js`** avoids the empty-state copy when **`article_count > 0`** (uses **`Lead: …`** from **`headline`** if needed).
+
+### Verification / build
+- **`PYTHONPATH=. python3 -m pytest backend/tests -q`**: pass. **`npm run build`** in **`frontend/`** refreshes **`bundle.js`**.
+- Example local check on **`us-iran war`** after a fresh fetch: **5** outlets, non-empty **`framing_summary`**, mixed **`bias_distribution`** (e.g. Bloomberg **Left**, Al Jazeera **Right**, others **Center** from blended axis).

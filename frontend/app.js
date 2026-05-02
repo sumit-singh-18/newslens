@@ -131,6 +131,16 @@ function firstSentence(text) {
   return t.slice(0, idx + 1).trim();
 }
 
+/** Prefer stored framing; never show the empty-state copy when the outlet has articles. */
+function outletFramingBody(outlet) {
+  const hasArticles = (outlet.article_count || 0) > 0;
+  if (outlet.framing_summary) return outlet.framing_summary;
+  if (outlet.missing_angle) return outlet.missing_angle;
+  if (hasArticles && outlet.headline) return `Lead: ${outlet.headline}`;
+  if (hasArticles) return "Topic coverage is available; framing snippet missing for this snapshot.";
+  return "No framing summary available yet for this outlet.";
+}
+
 function normalizeOutlet(o) {
   if (!o || typeof o !== "object") {
     return {
@@ -539,11 +549,7 @@ function OutletCard({ outlet, compareSelected, onCompareClick }) {
         </button>
       </div>
       <p className={biasBadgeClass(outlet.dominant_bias_label)}>{outlet.dominant_bias_label || "No bias label"}</p>
-      <p className="body">
-        {outlet.framing_summary ||
-          outlet.missing_angle ||
-          "No framing summary available yet for this outlet."}
-      </p>
+      <p className="body">{outletFramingBody(outlet)}</p>
       <div className="metric-row">
         <span>Sentiment score</span>
         <strong>

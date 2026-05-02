@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from backend.bias_utils import bias_distribution_from_outlets, bias_spectrum_bucket
+from backend.bias_utils import (
+    bias_distribution_from_outlets,
+    bias_label_from_axis,
+    bias_spectrum_bucket,
+)
 
 
 def test_bias_spectrum_bucket_keywords() -> None:
@@ -10,6 +14,12 @@ def test_bias_spectrum_bucket_keywords() -> None:
     assert bias_spectrum_bucket("Liberal") == "left"
     assert bias_spectrum_bucket("Center") == "center"
     assert bias_spectrum_bucket(None) == "center"
+
+
+def test_bias_label_from_axis() -> None:
+    assert bias_label_from_axis(0.40) == "Left"
+    assert bias_label_from_axis(0.50) == "Center"
+    assert bias_label_from_axis(0.55) == "Right"
 
 
 def test_bias_distribution_counts_outlets() -> None:

@@ -78,6 +78,22 @@ def bias_distribution_fixed_denominator(outlets: list[dict], denominator: int) -
     }
 
 
+def bias_label_from_axis(axis: float) -> str:
+    """
+    Map blended bias axis (0≈left … 1≈right) to a headline label.
+    Thresholds match NLPPipeline's blend output range on real articles.
+    """
+    try:
+        a = float(axis)
+    except (TypeError, ValueError):
+        return "Center"
+    if a < 0.47:
+        return "Left"
+    if a > 0.51:
+        return "Right"
+    return "Center"
+
+
 def extrem_bias_outlets(outlets: list[dict]) -> tuple[str | None, str | None]:
     """Most left = lowest avg bias score; most right = highest."""
     scored: list[dict] = []
