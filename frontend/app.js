@@ -41,6 +41,40 @@ const API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
 const HISTORY_KEY = "newslens-search-history";
 const DEFAULT_SERIES_LABEL = "14d";
 
+/** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
+const MISSING_ANGLE_UNAVAILABLE_COPY =
+  "Editorial analysis temporarily unavailable. Check back shortly.";
+
+function missingAngleIsUnavailableUserFacing(ma) {
+  if (!ma || typeof ma !== "object") return true;
+  const rawVal = ma.value;
+  const valueMissing =
+    rawVal == null || (typeof rawVal === "string" && rawVal.trim() === "");
+  const r = String(ma.reasoning ?? "").toLowerCase();
+  const reasoningLooksLikeQuotaOrLimit =
+    r.includes("quota") || r.includes("429") || r.includes("exceeded");
+  return valueMissing || reasoningLooksLikeQuotaOrLimit;
+}
+
+function missingAnglePresentationalCopy(ma) {
+  if (missingAngleIsUnavailableUserFacing(ma)) {
+    return {
+      body: MISSING_ANGLE_UNAVAILABLE_COPY,
+      reasoning: MISSING_ANGLE_UNAVAILABLE_COPY,
+    };
+  }
+  return {
+    body:
+      ma.value != null && String(ma.value).trim()
+        ? ma.value
+        : "Missing-angle analysis is not available for this topic yet.",
+    reasoning:
+      ma.reasoning != null && String(ma.reasoning).trim()
+        ? ma.reasoning
+        : "No additional reasoning was returned by the backend.",
+  };
+}
+
 function installGlobalErrorHandlers() {
   const show = (message, extra) => {
     const line = [message, extra].filter(Boolean).join("\n");
@@ -243,12 +277,17 @@ function normalizeBiasDistribution(raw) {
 function normalizeAnalyzePayload(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
+  const fetch = d.fetch && typeof d.fetch === "object" ? d.fetch : {};
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
     outlets,
     timeline: normalizeTimeline(d.timeline),
     missing_angle: normalizeMissingAngleBlock(d.missing_angle),
-    fetch: d.fetch && typeof d.fetch === "object" ? d.fetch : {},
+    fetch,
+    coverage_message:
+      typeof fetch.coverage_message === "string" && fetch.coverage_message.trim()
+        ? fetch.coverage_message.trim()
+        : null,
     scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
     bias_distribution: normalizeBiasDistribution(d.bias_distribution),
     most_left_outlet: d.most_left_outlet == null ? null : String(d.most_left_outlet),
@@ -273,7 +312,7 @@ const OUTLET_COLORS = {
   Reuters: "#9CA3AF",
   "Fox News": "#EF4444",
   "BBC News": "#0EA5E9",
-  "Al Jazeera English": "#8B5CF6",
+  "Associated Press": "#64748B",
 };
 
 /** Align with backend bias_utils: map model labels to left / center / right buckets. */
@@ -317,9 +356,54 @@ function updateHistory(term) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
 
-function formatBiasPosition(score) {
-  if (typeof score !== "number") return 50;
-  return Math.max(2, Math.min(98, ((score + 1) / 2) * 100));
+function spectrumSegmentWidths(biasDistribution, outlets) {
+  const fromApi = normalizeBiasDistribution(biasDistribution);
+  if (fromApi) {
+    const sum = fromApi.left_pct + fromApi.center_pct + fromApi.right_pct;
+    if (sum > 0) {
+      return {
+        left: fromApi.left_pct / sum,
+        center: fromApi.center_pct / sum,
+        right: fromApi.right_pct / sum,
+      };
+    }
+  }
+  const list = Array.isArray(outlets) ? outlets : [];
+  let nl = 0;
+  let nc = 0;
+  let nr = 0;
+  for (const o of list) {
+    if ((o.article_count || 0) <= 0) continue;
+    const b = biasSpectrumBucket(o.dominant_bias_label);
+    if (b === "left") nl += 1;
+    else if (b === "right") nr += 1;
+    else nc += 1;
+  }
+  const t = nl + nc + nr;
+  if (t === 0) return { left: 1 / 3, center: 1 / 3, right: 1 / 3 };
+  return { left: nl / t, center: nc / t, right: nr / t };
+}
+
+function assignSpectrumLanes(markers, minGapPct) {
+  const sorted = [...markers].sort((a, b) => a.score - b.score);
+  const laneLastX = [];
+  const maxLane = 12;
+  return sorted.map((m) => {
+    const x = Math.max(0, Math.min(1, m.score)) * 100;
+    let L = 0;
+    while (L < maxLane - 1 && laneLastX[L] !== undefined && x - laneLastX[L] < minGapPct) {
+      L += 1;
+    }
+    laneLastX[L] = x;
+    return { ...m, lane: L, xPct: x };
+  });
+}
+
+function outletMarkerColor(outlet) {
+  const bucket = biasSpectrumBucket(outlet.dominant_bias_label);
+  if (bucket === "left") return "#3B82F6";
+  if (bucket === "right") return "#EF4444";
+  return "#6B7280";
 }
 
 function emotionalIntensity(sentimentScore) {
@@ -418,42 +502,94 @@ function LoadingSkeleton() {
   );
 }
 
-function BiasSpectrum({ outlets }) {
+function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExtremes }) {
   const list = Array.isArray(outlets) ? outlets : [];
+  const widths = useMemo(
+    () => spectrumSegmentWidths(biasDistribution, list),
+    [biasDistribution, list]
+  );
+  const extremes = useMemo(() => {
+    const fb = extremOutlets(list);
+    const ml = spectrumExtremes?.most_left_outlet;
+    const mr = spectrumExtremes?.most_right_outlet;
+    return {
+      left: ml != null && String(ml).trim() !== "" ? String(ml).trim() : fb.left || "—",
+      right: mr != null && String(mr).trim() !== "" ? String(mr).trim() : fb.right || "—",
+    };
+  }, [spectrumExtremes, list]);
+
+  const articleTotal = useMemo(() => {
+    if (typeof articlesAnalyzed === "number" && Number.isFinite(articlesAnalyzed)) {
+      return articlesAnalyzed;
+    }
+    return list.reduce((sum, o) => sum + (o.article_count || 0), 0);
+  }, [articlesAnalyzed, list]);
+
+  const placedMarkers = useMemo(() => {
+    const raw = list.filter(
+      (o) =>
+        (o.article_count || 0) > 0 &&
+        typeof o.avg_bias_score === "number" &&
+        Number.isFinite(o.avg_bias_score)
+    );
+    const scored = raw.map((o) => ({
+      outlet: o,
+      score: Math.max(0, Math.min(1, o.avg_bias_score)),
+    }));
+    return assignSpectrumLanes(scored, 5.5);
+  }, [list]);
+
+  const stripHeight = useMemo(() => {
+    const maxLane = placedMarkers.reduce((m, x) => Math.max(m, x.lane), -1);
+    const lanes = maxLane < 0 ? 0 : maxLane + 1;
+    return 36 + lanes * 16;
+  }, [placedMarkers]);
+
   return (
     <section id="dashboard" className="bias-hero card">
       <div className="section-head">
-        <h2>Bias Spectrum</h2>
-        <span>Prominent signal for this topic</span>
+        <h2>Outlet marker spectrum</h2>
+        <span>Each outlet positioned by average bias score for this topic</span>
       </div>
-      <div className="spectrum-track">
-        <div className="stop left" />
-        <div className="stop center" />
-        <div className="stop right" />
-        {list
-          .filter((outlet) => (outlet.article_count || 0) > 0)
-          .map((outlet) => (
+      <div className="outlet-spectrum-visual">
+        <div className="spectrum-gradient-bar" aria-hidden="true">
+          <div className="spectrum-segment spectrum-segment-left" style={{ flex: widths.left }} />
+          <div
+            className="spectrum-segment spectrum-segment-center"
+            style={{ flex: widths.center }}
+          />
+          <div
+            className="spectrum-segment spectrum-segment-right"
+            style={{ flex: widths.right }}
+          />
+        </div>
+        <div
+          className="spectrum-marker-strip"
+          style={{ minHeight: `${stripHeight}px` }}
+          role="presentation"
+        >
+          {placedMarkers.map(({ outlet, score, lane, xPct }) => (
             <div
               key={outlet.source}
-              className="marker"
-              style={{ left: `${formatBiasPosition(outlet.avg_bias_score)}%` }}
+              className="spectrum-marker"
+              style={{ left: `${xPct}%`, top: 4 + lane * 16 }}
+              title={`${outlet.source} — bias score ${score.toFixed(3)}`}
             >
-              {outlet.source}
+              <span
+                className="spectrum-marker-dot"
+                style={{ background: outletMarkerColor(outlet) }}
+              />
+              <span className="spectrum-marker-name">{outlet.source}</span>
             </div>
           ))}
-      </div>
-      <div className="spectrum-legend">
-        <p>
-          <span className="dot blue" />
-          Left-leaning
-        </p>
-        <p>
-          <span className="dot gray" />
-          Center / neutral
-        </p>
-        <p>
-          <span className="dot red" />
-          Right-leaning
+        </div>
+        <div className="spectrum-axis-labels">
+          <span className="spectrum-axis-extreme spectrum-axis-left">{extremes.left}</span>
+          <span className="spectrum-axis-mid">center</span>
+          <span className="spectrum-axis-extreme spectrum-axis-right">{extremes.right}</span>
+        </div>
+        <p className="spectrum-articles-footnote">
+          Positions based on {articleTotal} article{articleTotal === 1 ? "" : "s"} analyzed
         </p>
       </div>
     </section>
@@ -815,14 +951,15 @@ function TopicTrendChart({ topic, outlets }) {
 }
 
 function MissingAngleCard({ missingAngle }) {
+  const { body, reasoning } = missingAnglePresentationalCopy(missingAngle);
   return (
     <section id="methodology" className="missing-angle card">
       <p className="eyebrow">Editorial insight</p>
       <h2>Missing Angle</h2>
-      <p>{missingAngle?.value || "Missing-angle analysis is not available for this topic yet."}</p>
+      <p>{body}</p>
       <div className="reasoning-box">
         <h4>Reasoning</h4>
-        <p>{missingAngle?.reasoning || "No additional reasoning was returned by the backend."}</p>
+        <p>{reasoning}</p>
       </div>
     </section>
   );
@@ -872,6 +1009,9 @@ function ResultsHeader({
     };
   }, [spectrumExtremes, outlets]);
   const teaser = useMemo(() => {
+    if (missingAngleIsUnavailableUserFacing(missingAngle)) {
+      return MISSING_ANGLE_UNAVAILABLE_COPY;
+    }
     const v = missingAngle?.value;
     if (!v || typeof v !== "string") return "Perspective gaps may appear as more outlets publish.";
     const one = firstSentence(v) || v;
@@ -922,9 +1062,17 @@ function AnalysisResults({
   const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
   const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
   const comparing = compareSelection.length === 2;
+  const coverageShortfall =
+    outlets.length === 0 && data?.coverage_message ? String(data.coverage_message) : "";
 
   return (
     <main className="results-stack">
+      {coverageShortfall ? (
+        <section className="card coverage-shortfall" role="status">
+          <p className="eyebrow">Coverage</p>
+          <p className="coverage-shortfall-msg">{coverageShortfall}</p>
+        </section>
+      ) : null}
       <ResultsHeader
         topic={data.topic || ""}
         outlets={outlets}
@@ -942,7 +1090,19 @@ function AnalysisResults({
       {comparing ? (
         <ComparisonPanel pair={compareSelection} outlets={outlets} onExit={onExitComparison} />
       ) : null}
-      <BiasSpectrum outlets={outlets} />
+      <BiasSpectrum
+        outlets={outlets}
+        biasDistribution={data.bias_distribution}
+        articlesAnalyzed={
+          data.scoring && typeof data.scoring.article_count === "number"
+            ? data.scoring.article_count
+            : null
+        }
+        spectrumExtremes={{
+          most_left_outlet: data.most_left_outlet,
+          most_right_outlet: data.most_right_outlet,
+        }}
+      />
       <OutletGrid outlets={outlets} compareSelection={compareSelection} onCompareClick={onCompareClick} />
       <HeadlineComparison outlets={outlets} />
       <div className="chart-grid">

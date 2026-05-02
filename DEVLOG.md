@@ -356,3 +356,47 @@ Anthropic API credits exhausted; Gemini free tier covers Missing Angle generatio
 
 ### Verification
 - Restart backend; search **`trade war`**; Missing Angle should call Gemini when **`GEMINI_API_KEY`** is set and ≥3 outlet summaries exist. Local smoke test hit **`429`** quota on the dev key (confirms the **`gemini-2.0-flash`** path end-to-end). Optional **`GEMINI_MODEL`** env overrides the default Flash model id.
+
+## [2026-05-01] - Outlet marker spectrum (bias bar redesign)
+
+### What changed
+- **`frontend/app.js`**: Replaced the decorative fixed thirds spectrum with an **outlet marker spectrum**: gradient bar segments sized by **`bias_distribution`** (normalized so segment widths match left/center/right outlet mix), pins at **`avg_bias_score`** on a **0–1** horizontal axis (replacing the incorrect **`(score+1)/2`** mapping), marker colors aligned to **`dominant_bias_label`** (**#3B82F6** / **#6B7280** / **#EF4444**), horizontal proximity stacking for overlapping pins, native **`title`** tooltips with exact scores, axis row (**most left** · **center** · **most right**) and a footnote using **`scoring.article_count`** from **`/analyze`** (fallback: sum of outlet **`article_count`**).
+- **`frontend/styles.css`**: New layout/styles for the gradient bar, marker strip, axis labels, and footnote; removed the old equal-thirds track and static legend row.
+
+### Reason
+The prior bar used three equal columns and mis-scaled scores; it did not communicate real outlet positions or population mix.
+
+### Verification
+- **`npm run build`** in **`frontend/`** regenerates **`bundle.js`**.
+
+## [2026-05-01] - Missing Angle: quota UX + Gemini 429 fallback
+
+### What changed
+- **`frontend/app.js`**: Missing Angle body and **Reasoning** use **`missingAnglePresentationalCopy`**: when **`value`** is empty or **reasoning** matches quota signals (**quota** / **429** / **exceeded**), both show **`Editorial analysis temporarily unavailable. Check back shortly.`** instead of raw API JSON. Share-card teaser uses the same rule so quota errors never surface in the exported image text.
+- **`backend/llm_analyzer.py`**: Catch **`ResourceExhausted`** and **`TooManyRequests`** (429-class) and quota-shaped **`Exception`**s; **no retries**; **`logger.warning`** with the real exception; return **`GEMINI_QUOTA_USER_MESSAGE`** as **`error_message`** (same copy as the frontend). Non-quota failures still log traceback and return **`str(exc)`** as today.
+- **`backend/.env`**: Comment — *If hitting quota, enable billing at aistudio.google.com* (next to **`GEMINI_API_KEY`**).
+- **`backend/tests/test_analyze_resilience.py`**: **`test_llm_analyzer_quota_returns_safe_message_no_raw_payload`** for **`ResourceExhausted`**.
+
+### Reason
+Gemini free-tier quota returns **429** / JSON-heavy errors that were shown in **`/analyze`** **`missing_angle.reasoning`**; Missing Angle must stay optional and never expose vendor error payloads to users.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/test_analyze_resilience.py -q`**: pass.
+- **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.
+
+## [2026-05-02] - Credible outlet allowlist (15 sources)
+
+### What changed
+- **`backend/news_fetcher.py`**: Replaced the broad NewsAPI source pool and open **`everything`** / **`top-headlines`** fallbacks with a **fixed 15-source credibility allowlist** (AP, Reuters, BBC, NBC, ABC, CBS, NPR, WaPo, WSJ, Guardian, NYT, CNN, Fox, MSNBC, Bloomberg). Fetches **`everything`** with **`sources=`** that list only. Ingestion filters by **`source.id`** and maps IDs to **`SOURCE_DISPLAY_NAMES`** (e.g. **`associated-press`** → **Associated Press**). Selection remains **top 5 by article count** among approved outlets, with **tier order** as tie-break. If **fewer than 3** approved outlets have articles (after dedupe), the fetcher returns **`coverage_message`**: *Not enough credible coverage found for this topic yet* and **does not** persist articles. **24h cache** is reused only when **`compute_selected_outlets_from_db`** finds approved outlets; otherwise stale rows for the topic are **invalidated** and a fresh fetch runs.
+- **`backend/tests/test_analyze_resilience.py`**: Seed / mock outlets use **Reuters** instead of **Al Jazeera English** so tests align with the approved set.
+- **`frontend/app.js`**: **`normalizeAnalyzePayload`** exposes **`coverage_message`**; **`AnalysisResults`** shows a **Coverage** card when there are no outlets and the backend sent the shortfall message.
+- **`frontend/styles.css`**: Styles for **`.coverage-shortfall`**.
+- **`.cursor/.rules/000-core.mdc`**: Tech stack line documents the **15 approved tiers**.
+
+### Reason
+Dynamic outlet picking pulled low-quality domains (e.g. tabloid / niche sites) via unfiltered **`everything`** queries; NewsLens should compare **major, pre-vetted** outlets only.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/test_analyze_resilience.py -q`**: pass.
+- **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.
+- NewsAPI spot-check (**`trade war`**, **`climate policy`**): responses contained **only** allowlisted **`source.id`** values; no stray publishers.

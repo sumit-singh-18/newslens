@@ -9,14 +9,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from google.api_core.exceptions import ResourceExhausted
+
 from backend import main
 from backend.database import Article, ArticleScore, Base
-from backend.llm_analyzer import LLMAnalyzer
+from backend.llm_analyzer import GEMINI_QUOTA_USER_MESSAGE, LLMAnalyzer
 
 
 def _seed_articles_with_scores(db: Session, topic: str) -> None:
     now_utc = datetime.now(timezone.utc)
-    sources = ["BBC News", "CNN", "Fox News", "Al Jazeera English"]
+    sources = ["BBC News", "CNN", "Fox News", "Reuters"]
     n = 0
     for source in sources:
         for _ in range(2):
@@ -61,6 +63,24 @@ def test_db_session():
         db.close()
 
 
+def test_llm_analyzer_quota_returns_safe_message_no_raw_payload(test_db_session: Session, monkeypatch):
+    topic = "climate change"
+    _seed_articles_with_scores(test_db_session, topic)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    analyzer = LLMAnalyzer()
+    mock_model = MagicMock()
+    mock_model.generate_content.side_effect = ResourceExhausted("fake quota detail")
+    analyzer._model = mock_model
+    result = analyzer.generate_missing_angle(topic, test_db_session)
+
+    assert result["success"] is True
+    assert result["data"]["missing_angle"] is None
+    assert result["data"]["error"] is True
+    assert result["data"]["error_message"] == GEMINI_QUOTA_USER_MESSAGE
+    assert "{" not in (result["data"].get("error_message") or "")
+
+
 def test_llm_analyzer_returns_fallback_on_gemini_failure(test_db_session: Session, monkeypatch):
     topic = "climate change"
     _seed_articles_with_scores(test_db_session, topic)
@@ -98,7 +118,7 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
             "cached": True,
             "count": 8,
             "saved_urls": [],
-            "selected_outlets": ["Al Jazeera English", "BBC News", "CNN", "Fox News"],
+            "selected_outlets": ["Reuters", "BBC News", "CNN", "Fox News"],
         }
 
     def _fake_generate_missing_angle(self, topic: str, db: Session, outlet_sources=None):
@@ -109,7 +129,7 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
                 "missing_angle": None,
                 "confidence": None,
                 "outlet_missing_angles": {
-                    "Al Jazeera English": None,
+                    "Reuters": None,
                     "BBC News": None,
                     "CNN": None,
                     "Fox News": None,

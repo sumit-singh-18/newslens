@@ -514,6 +514,20 @@ h1 {
   box-shadow: var(--card-shadow);
 }
 
+.coverage-shortfall {
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  border-left: 4px solid #6366f1;
+  background: rgba(238, 242, 255, 0.95);
+}
+
+.coverage-shortfall-msg {
+  margin: 8px 0 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
 .section-head {
   display: flex;
   justify-content: space-between;
@@ -537,69 +551,113 @@ h2 {
   padding: 32px;
 }
 
-.spectrum-track {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+.outlet-spectrum-visual {
+  margin-top: 10px;
+}
+
+.spectrum-gradient-bar {
+  display: flex;
+  width: 100%;
+  height: 16px;
   border-radius: 999px;
   overflow: hidden;
-  height: 54px;
-  margin-top: 8px;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-.stop.left { background: #3b82f6; }
-.stop.center { background: #9ca3af; }
-.stop.right { background: #ef4444; }
+.spectrum-segment {
+  min-width: 0;
+  height: 100%;
+}
 
-.marker {
+.spectrum-segment-left {
+  background: #3b82f6;
+}
+
+.spectrum-segment-center {
+  background: #6b7280;
+}
+
+.spectrum-segment-right {
+  background: #ef4444;
+}
+
+.spectrum-marker-strip {
+  position: relative;
+  margin-top: 6px;
+}
+
+.spectrum-marker {
   position: absolute;
-  top: -42px;
-  transform: translateX(-50%);
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: white;
-  background: #111827;
-  border-radius: 999px;
-  padding: 8px 16px;
-  white-space: nowrap;
-}
-
-.marker::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: 100%;
-  width: 2px;
-  height: 14px;
-  background: #94a3b8;
-}
-
-.spectrum-legend {
-  margin-top: 16px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
-}
-
-.spectrum-legend p {
-  margin: 0;
-  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 0.88rem;
+  transform: translateX(-50%);
+  z-index: 2;
 }
 
-.dot {
+.spectrum-marker-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+  flex-shrink: 0;
 }
 
-.blue { background: var(--left-blue); }
-.gray { background: var(--neutral-gray); }
-.red { background: var(--right-red); }
+.spectrum-marker-name {
+  margin-top: 5px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #374151;
+  max-width: 92px;
+  text-align: center;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spectrum-axis-labels {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.spectrum-axis-extreme {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spectrum-axis-left {
+  justify-self: start;
+  text-align: left;
+}
+
+.spectrum-axis-mid {
+  justify-self: center;
+  text-align: center;
+  color: #6b7280;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.spectrum-axis-right {
+  justify-self: end;
+  text-align: right;
+}
+
+.spectrum-articles-footnote {
+  margin: 10px 0 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
 
 .outlets-grid {
   display: grid;

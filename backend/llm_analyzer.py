@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import google.generativeai as genai
+from google.api_core.exceptions import ResourceExhausted, TooManyRequests
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,11 @@ Rules:
 # Default Flash model (override with GEMINI_MODEL). `gemini-1.5-flash` is often unavailable
 # on current API versions — use `genai.list_models()` to pick a supported id.
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+
+# User-safe copy when Gemini returns 429 / quota exhaustion (matches frontend).
+GEMINI_QUOTA_USER_MESSAGE = (
+    "Editorial analysis temporarily unavailable. Check back shortly."
+)
 
 
 class LLMAnalyzer:
@@ -137,6 +143,36 @@ class LLMAnalyzer:
             "Return ONLY valid JSON with this shape:\n"
             f"{json.dumps(schema)}"
         )
+
+    @staticmethod
+    def _is_gemini_quota_error(exc: BaseException) -> bool:
+        """Detect rate/quota exhaustion (free tier 429) without treating every error as quota."""
+        if isinstance(exc, (ResourceExhausted, TooManyRequests)):
+            return True
+        msg = str(exc).lower()
+        if "resource exhausted" in msg or "too many requests" in msg:
+            return True
+        if "429" in msg and any(
+            k in msg for k in ("quota", "exceeded", "rate", "limit", "resource")
+        ):
+            return True
+        return False
+
+    def _quota_exceeded_response(self, normalized_topic: str, outlet_sources: list[str]) -> dict[str, Any]:
+        """Immediate fallback for 429 / quota — no retries, no raw API payload to callers."""
+        return {
+            "success": True,
+            "data": {
+                "topic": normalized_topic,
+                "missing_angle": None,
+                "confidence": None,
+                "outlet_missing_angles": {s: None for s in outlet_sources},
+                "from_cache": False,
+                "error": True,
+                "error_message": GEMINI_QUOTA_USER_MESSAGE,
+            },
+            "error": None,
+        }
 
     @staticmethod
     def _normalize_outlet_missing_angles(
@@ -304,7 +340,16 @@ class LLMAnalyzer:
                 },
                 "error": None,
             }
+        except (ResourceExhausted, TooManyRequests) as exc:
+            logger.warning(
+                "Gemini quota or rate limit (429-class): %s",
+                exc,
+            )
+            return self._quota_exceeded_response(normalized_topic, outlet_sources)
         except Exception as exc:
+            if self._is_gemini_quota_error(exc):
+                logger.warning("Gemini quota-like error: %s", exc)
+                return self._quota_exceeded_response(normalized_topic, outlet_sources)
             traceback.print_exc()
             return {
                 "success": True,
