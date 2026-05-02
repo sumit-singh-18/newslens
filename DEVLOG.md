@@ -191,3 +191,70 @@ This file tracks all major development progress, decisions, challenges, and solu
 ### Status
 - Dashboard is now aligned with updated frontend rule set (v1.3) and remains fully functional.
 - Next step: optional final pixel-polish pass directly against browser render for exact screenshot parity before deployment.
+
+## [2026-05-01] - Phase 4b: Advanced Features (Compare, Profiles, Topic Trend, Share)
+
+### What Was Done
+- Added **outlet head-to-head comparison**: per-card “Compare” control, two-outlet selection with outline highlight, side-by-side panel (bias, sentiment, headline, emotional intensity, key framing phrase from existing `/analyze` outlet objects), and **Exit Comparison** to clear selection.
+- Added **Source Profile** collapsible per outlet: historical aggregates from `article_scores` + `articles` (latest score per article, all topics) via new `GET /outlet-profile?outlet=`, shown as three stat pills plus a small bias sparkline over the last 14 snapshot days, with loading and error UI.
+- Added **Topic coverage trend** below the narrative timeline: stacked **Recharts** `AreaChart` for article volume by outlet over the last 7 days for the current topic from `GET /topic-trend?topic=&days=7`, reusing `OUTLET_COLORS`, with loading and error states.
+- Added **Share** in the results header: off-screen styled summary card + **html2canvas** PNG download (topic, bias distribution text, most left/right outlets, missing-angle teaser), with busy and inline error handling.
+- Wired **CORS** middleware on the FastAPI app so a static frontend on another origin can call the API during development.
+- Replaced the static `frontend/index.html` shell with a React mount (`#root` + `bundle.js`) and committed a **pre-built** `frontend/bundle.js` (esbuild JSX → `React.createElement`, runtime deps still loaded from `esm.sh` URLs inside the bundle).
+- Added `frontend/package.json` (lists `html2canvas` and peers), optional local `esbuild` binary path ignored in `.gitignore`, and extended `frontend/styles.css` for new layouts (comparison grid, share card, outlet actions, sparkline).
+
+### Technical Decisions
+- Implemented `/outlet-profile` and `/topic-trend` only where specified; all comparison metrics stay on the existing `/analyze` payload (no duplicate analyze calls).
+- Historical outlet stats intentionally come from **article_scores** joined with **articles** (per-out-row dedupe), because `topic_analysis` does not store per-outlet bias/sentiment—the requirement’s fallback SQL shape matches this implementation.
+- Topic volume trend buckets by **UTC calendar day** derived from `articles.fetched_at`, grouped with `articles.topic`, aligned with “coverage volume” intent.
+
+### Challenges & Solutions
+- Problem: No `npm`/`node` toolchain in the agent environment to install packages or run the bundler.
+- Solution: Downloaded the platform **esbuild** binary from the npm registry tarball, compiled `app.js` → `bundle.js`, and kept CDN `esm.sh` dependency URLs so the runtime matches Phase 4a’s ESM approach while supporting `html2canvas` and JSX.
+
+### Status
+- Phase 4b features are implemented end-to-end; rebuild `frontend/bundle.js` after editing `frontend/app.js` with `frontend/esbuild` or project-local `esbuild` (`npm run build` when Node is available).
+
+## [2026-05-02] - Local dev scripts & stack smoke test
+
+### What Was Done
+- Hardened **`scripts/serve-frontend.sh`**: port detection uses a Python bind probe instead of `lsof`, tries **5173 → 8080 → 5174 → 3000**, and prints the canonical dashboard URL.
+- Added **`scripts/serve-backend.sh`** so uvicorn always runs from the **repository root** with `.venv` (avoids broken `cd …venv/bin/python` merges).
+- Added **`scripts/check-local-stack.sh`** to verify **`GET /health`** and static **`/` + `/bundle.js`** in one command.
+- Added **`backend/__init__.py`** so `backend` is an explicit package for imports.
+
+### Status
+- Ran **pytest** (`backend/tests`) and **`check-local-stack.sh`** successfully against live local ports (API + static frontend).
+
+## [2026-05-01] - Fix white screen: duplicate React (CDN + bundle)
+
+### Bug
+- Dashboard showed a blank page with `TypeError: Cannot read properties of null (reading 'useEffect')`, often from **multiple React copies** (hooks dispatcher attached to the wrong instance).
+
+### Cause
+- `frontend/app.js` imported React, React DOM, TanStack Query, Recharts, and html2canvas from **jsdelivr** `+esm` URLs. The esbuild output kept those as **runtime CDN imports** while other code paths still assumed a single bundled React, producing invalid hook behavior.
+
+### Fix
+- Switched `app.js` imports to **bare package specifiers** (`react`, `react-dom/client`, `@tanstack/react-query`, `recharts`, `html2canvas`) so **`npm run build`** bundles one React from `node_modules`.
+- Confirmed `react` / `react-dom` versions align in `package.json`; no `vite.config` (esbuild-only frontend).
+- Clean reinstall (`rm -rf node_modules package-lock.json`, `npm install`), `npm dedupe` (already single `react@18.3.1`), rebuilt `bundle.js`.
+- Added **`npm run dev`** → `npm run build && npm run serve` for a one-shot local workflow.
+- Tweaked `index.html` loading hint (no longer suggests jsdelivr for the app bundle).
+
+### Status
+- Rebuilt bundle verified: no jsdelivr URLs; static smoke test OK. Refresh the dashboard after rebuild.
+
+## [2026-05-01] - Fix local dashboard “Failed to fetch” (backend down + explicit CORS)
+
+### What Was Done
+- Confirmed **`GET http://127.0.0.1:8000/health`** and **`GET /analyze?topic=…`** failed when no process listened on port **8000** — the static frontend at **5173** was running without the FastAPI server.
+- Started the API with **`scripts/serve-backend.sh`** (repo-root **`.venv`**, **`uvicorn backend.main:app`** on **`127.0.0.1:8000`**), matching **`frontend/app.js`** default **`API_BASE_URL`** (`http://127.0.0.1:8000`).
+- Replaced blanket **`allow_origins=["*"]`** with explicit development origins **`http://127.0.0.1:5173`** and **`http://localhost:5173`**, plus optional comma-separated **`CORS_ORIGINS`** for deployed frontends.
+- Updated **`.cursor/.rules/006-env-config.mdc`** and **`001-backend-fastapi.mdc`** so local CORS expectations and **`CORSMiddleware`** are documented as mandatory.
+
+### Verification
+- **`/health`** returns JSON envelope; **`/analyze?topic=climate+change`** returns **200** with full analysis payload.
+- OPTIONS preflight with **`Origin: http://127.0.0.1:5173`** returns **`access-control-allow-origin`** for that origin.
+
+### Status
+- For local development, run **`scripts/serve-backend.sh`** (or equivalent **`python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000`** from repo root) alongside **`npm run dev`** in **`frontend/`**.

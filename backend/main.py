@@ -8,15 +8,31 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import desc, select, text
 from sqlalchemy.orm import Session
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
+# Browser dev servers (Vite/static on 5173). Append comma-separated URLs via CORS_ORIGINS for staging/production.
+_DEV_CORS_ORIGINS = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+]
+_extra_cors = [
+    o.strip()
+    for o in (os.getenv("CORS_ORIGINS") or "").split(",")
+    if o.strip()
+]
+_CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
+
 from .database import Article, ArticleScore, create_tables, get_db
 from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import ALLOWED_OUTLETS, NewsFetcherError, fetch_and_store_articles
+
+DEFAULT_TOPIC_TREND_DAYS = 7
+DEFAULT_OUTLET_SERIES_DAYS = 14
 from .nlp_pipeline import NLPPipeline
 
 _nlp_pipeline: NLPPipeline | None = None
@@ -31,6 +47,12 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="NewsLens Backend", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ALLOW_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 router = APIRouter()
 
 
@@ -212,6 +234,117 @@ def _build_bias_timeline(topic: str, db: Session, days: int = 7) -> list[dict]:
     return [buckets[key] for key in sorted(buckets.keys())]
 
 
+def _outlet_historical_profile(outlet: str, db: Session) -> dict:
+    """Latest score per article for this source (all topics), then averages + daily bias series."""
+    rows = db.execute(
+        select(
+            Article.id,
+            Article.snapshot_date,
+            ArticleScore.bias_score,
+            ArticleScore.sentiment_score,
+            ArticleScore.created_at,
+        )
+        .join(ArticleScore, ArticleScore.article_id == Article.id)
+        .where(Article.source == outlet)
+        .order_by(Article.id.asc(), desc(ArticleScore.created_at))
+    ).all()
+
+    latest_by_article: dict[int, dict] = {}
+    for row in rows:
+        if row.id in latest_by_article:
+            continue
+        latest_by_article[row.id] = {
+            "snapshot_date": row.snapshot_date,
+            "bias_score": row.bias_score,
+            "sentiment_score": row.sentiment_score,
+        }
+
+    bias_vals: list[float] = []
+    sent_vals: list[float] = []
+    for item in latest_by_article.values():
+        if item["bias_score"] is not None:
+            bias_vals.append(float(item["bias_score"]))
+        if item["sentiment_score"] is not None:
+            sent_vals.append(float(item["sentiment_score"]))
+
+    n = len(latest_by_article)
+    avg_bias = round(sum(bias_vals) / len(bias_vals), 4) if bias_vals else None
+    avg_sent = round(sum(sent_vals) / len(sent_vals), 4) if sent_vals else None
+
+    end_date = datetime.now(timezone.utc).date()
+    start_series = end_date - timedelta(days=DEFAULT_OUTLET_SERIES_DAYS - 1)
+    by_day: dict[str, list[float]] = {}
+    for item in latest_by_article.values():
+        sd = item["snapshot_date"]
+        if sd is None or sd < start_series or sd > end_date:
+            continue
+        if item["bias_score"] is None:
+            continue
+        key = sd.isoformat()
+        by_day.setdefault(key, []).append(float(item["bias_score"]))
+
+    series = []
+    day_cursor = start_series
+    while day_cursor <= end_date:
+        key = day_cursor.isoformat()
+        vals = by_day.get(key)
+        series.append(
+            {
+                "date": key,
+                "avg_bias": round(sum(vals) / len(vals), 4) if vals else None,
+            }
+        )
+        day_cursor += timedelta(days=1)
+
+    return {
+        "outlet": outlet,
+        "article_count": n,
+        "avg_bias_score": avg_bias,
+        "avg_sentiment_score": avg_sent,
+        "series": series,
+    }
+
+
+def _topic_volume_trend(topic: str, db: Session, days: int) -> list[dict]:
+    """Article counts per calendar day (UTC) and source from fetched_at."""
+    normalized = topic.strip()
+    end_date = datetime.now(timezone.utc).date()
+    start_date = end_date - timedelta(days=max(1, days) - 1)
+    start_dt = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
+    end_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
+    rows = db.execute(
+        select(Article.fetched_at, Article.source).where(
+            Article.topic == normalized,
+            Article.fetched_at >= start_dt,
+            Article.fetched_at <= end_dt,
+        )
+    ).all()
+
+    counts: dict[tuple[str, str], int] = {}
+    for fetched_at, source in rows:
+        if not fetched_at:
+            continue
+        day_key = fetched_at.astimezone(timezone.utc).date().isoformat()
+        key = (day_key, source)
+        counts[key] = counts.get(key, 0) + 1
+
+    day_cursor = start_date
+    bucket_keys: list[str] = []
+    while day_cursor <= end_date:
+        bucket_keys.append(day_cursor.isoformat())
+        day_cursor += timedelta(days=1)
+
+    result = []
+    for day_key in bucket_keys:
+        row = {"date": day_key}
+        for src in ALLOWED_OUTLETS:
+            row[src] = counts.get((day_key, src), 0)
+        result.append(row)
+
+    return result
+
+
 @router.get("/health", response_model=HealthResponse)
 def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     db.execute(text("SELECT 1"))
@@ -310,6 +443,46 @@ async def analyze_topic(
             "outlet_count": score_data["outlet_count"],
             "outlets": outlets_with_missing_angle,
             "timeline": timeline,
+        },
+        "error": None,
+    }
+
+
+@router.get("/outlet-profile", response_model=AnalyzeResponse)
+def get_outlet_profile(
+    outlet: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+) -> AnalyzeResponse:
+    normalized = outlet.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Outlet name must not be empty.")
+    if normalized not in ALLOWED_OUTLETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown outlet. Allowed: {', '.join(ALLOWED_OUTLETS)}",
+        )
+    return {
+        "success": True,
+        "data": _outlet_historical_profile(normalized, db),
+        "error": None,
+    }
+
+
+@router.get("/topic-trend", response_model=AnalyzeResponse)
+def get_topic_trend(
+    topic: str = Query(..., min_length=1),
+    days: int = Query(DEFAULT_TOPIC_TREND_DAYS, ge=1, le=90),
+    db: Session = Depends(get_db),
+) -> AnalyzeResponse:
+    normalized = topic.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Topic must not be empty.")
+    return {
+        "success": True,
+        "data": {
+            "topic": normalized,
+            "days": days,
+            "series": _topic_volume_trend(normalized, db, days),
         },
         "error": None,
     }

@@ -45,4 +45,8 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Local esbuild binary (see frontend/package.json); committed bundle is bundle.js
+frontend/esbuild
+frontend/package/
+
 .hf-cache/

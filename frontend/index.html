@@ -13,112 +13,37 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="page">
-      <header class="topbar">
-        <div class="brand-lockup">
-          <div class="brand">NewsLens</div>
-          <p class="brand-tag">Truth in headlines. Bias in framing.</p>
-        </div>
-        <nav>
-          <a class="active" href="#dashboard">Dashboard</a>
-          <a href="#topics">Topics</a>
-          <a href="#outlets">Outlets</a>
-          <a href="#methodology">Methodology</a>
-        </nav>
-        <button class="cta" type="button">Start Analysis</button>
-      </header>
-
-      <section class="hero">
-        <p class="eyebrow">NewsLens editorial intelligence</p>
-        <h1>Read the same story through every bias line.</h1>
-        <p class="lede">
-          NewsLens maps truth signals, bias direction, and narrative framing so you can compare how
-          outlets shape the same topic.
-        </p>
-      </section>
-
-      <main class="results-stack">
-        <section id="dashboard" class="bias-hero card">
-          <div class="section-head">
-            <h2>Bias Spectrum</h2>
-            <span>Prominent signal for this topic</span>
-          </div>
-          <div class="spectrum-track">
-            <div class="stop left"></div>
-            <div class="stop center"></div>
-            <div class="stop right"></div>
-            <div class="marker" style="left: 24%;">CNN</div>
-            <div class="marker" style="left: 50%;">Reuters</div>
-            <div class="marker" style="left: 79%;">Fox News</div>
-          </div>
-          <div class="spectrum-legend">
-            <p><span class="dot blue"></span>Left-leaning</p>
-            <p><span class="dot gray"></span>Center / neutral</p>
-            <p><span class="dot red"></span>Right-leaning</p>
-          </div>
-        </section>
-
-        <section id="outlets" class="outlets-grid">
-          <article class="card outlet-card">
-            <h3>CNN</h3>
-            <p class="badge blue-bg">Left-leaning</p>
-            <p class="body">Focuses on climate urgency, equity, and immediate policy response.</p>
-            <div class="metric-row"><span>Sentiment score</span><strong>0.381</strong></div>
-            <div class="metric-row"><span>Emotional intensity (0-10)</span><strong>3.8</strong></div>
-          </article>
-          <article class="card outlet-card">
-            <h3>Reuters</h3>
-            <p class="badge gray-bg">Center / neutral</p>
-            <p class="body">Emphasizes facts, institutions, and cross-party statements with neutral tone.</p>
-            <div class="metric-row"><span>Sentiment score</span><strong>0.041</strong></div>
-            <div class="metric-row"><span>Emotional intensity (0-10)</span><strong>0.4</strong></div>
-          </article>
-          <article class="card outlet-card">
-            <h3>Fox News</h3>
-            <p class="badge red-bg">Right-leaning</p>
-            <p class="body">Highlights economic cost and regulatory burden with skeptical framing.</p>
-            <div class="metric-row"><span>Sentiment score</span><strong>-0.262</strong></div>
-            <div class="metric-row"><span>Emotional intensity (0-10)</span><strong>2.6</strong></div>
-          </article>
-        </section>
-
-        <section id="topics" class="card headlines">
-          <div class="section-head">
-            <h2>Headline Comparison</h2>
-            <span>Same topic, different framing</span>
-          </div>
-          <div class="headline-grid">
-            <article class="headline-item">
-              <p class="headline-source">CNN</p>
-              <p class="headline-text">Climate policy accelerates as cities call for emergency adaptation plans.</p>
-            </article>
-            <article class="headline-item">
-              <p class="headline-source">Reuters</p>
-              <p class="headline-text">Lawmakers debate climate package as agencies release updated impact projections.</p>
-            </article>
-            <article class="headline-item">
-              <p class="headline-source">Fox News</p>
-              <p class="headline-text">New climate rules raise cost concerns for households and small businesses.</p>
-            </article>
-          </div>
-        </section>
-
-        <section id="methodology" class="missing-angle card">
-          <p class="eyebrow">Editorial insight</p>
-          <h2>Missing Angle</h2>
-          <p>
-            Most coverage tracks policy conflict but misses ground-level evidence. The underreported
-            truth is how local communities are adapting in real time, especially in lower-income regions.
-          </p>
-          <div class="reasoning-box">
-            <h4>Reasoning</h4>
-            <p>
-              Outlets heavily cite officials and political debate, but few center frontline stories where
-              adaptation tradeoffs are already visible in housing, health, and local infrastructure.
-            </p>
-          </div>
-        </section>
-      </main>
+    <div id="root">
+      <p style="font-family:system-ui,sans-serif;padding:24px;color:#64748b;font-size:14px;">
+        Loading NewsLens… If nothing appears after a few seconds, open DevTools → Console for errors.
+      </p>
     </div>
+    <!-- #region agent log -->
+    <script>
+      (function () {
+        var L = "http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673";
+        function send(msg, data, hid) {
+          data = data || {};
+          data.hypothesisId = hid;
+          try {
+            fetch(L, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "974724" },
+              body: JSON.stringify({ sessionId: "974724", location: "index.html:boot", message: msg, data: data, timestamp: Date.now() }),
+            }).catch(function () {});
+          } catch (e) {}
+        }
+        send("index.html: script-inlined", { hasRoot: !!document.getElementById("root") }, "H3");
+        window.addEventListener("error", function (e) {
+          send("window.error", { message: e.message, file: e.filename, line: e.lineno, col: e.colno }, "H2");
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e.reason;
+          send("unhandledrejection", { reason: r && (r.message || String(r)), stack: r && r.stack }, "H1");
+        });
+      })();
+    </script>
+    <!-- #endregion -->
+    <script type="module" src="./bundle.js"></script>
   </body>
 </html>
