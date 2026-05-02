@@ -258,3 +258,39 @@ This file tracks all major development progress, decisions, challenges, and solu
 
 ### Status
 - For local development, run **`scripts/serve-backend.sh`** (or equivalent **`python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000`** from repo root) alongside **`npm run dev`** in **`frontend/`**.
+
+## [2026-05-01] - Fix white screen on analysis results (assets, errors, API shape)
+
+### Bug
+- Running a topic search could leave the dashboard as a **blank white screen** instead of rendering results.
+
+### Cause (combined)
+- **Relative asset URLs** (`./bundle.js`, `./styles.css`) resolve incorrectly when the document path is not the site root (e.g. nested paths), so the React bundle may fail to load after navigation-style URLs.
+- **Unhandled React render errors** (no error boundary) took down the entire tree with no UI fallback.
+- **Fragile assumptions** about `/analyze` payload shape (missing arrays/labels) and a **regex lookbehind** in share teaser logic could break on some engines or odd payloads.
+
+### Fix
+- Switched **`frontend/index.html`** script and stylesheet to **absolute paths** (`/bundle.js`, `/styles.css`).
+- Added **`installGlobalErrorHandlers()`** (window `error` + `unhandledrejection`) with a fixed **`#newslens-boot-error`** banner so failures are visible immediately.
+- Added a React **`ErrorBoundary`** around the results stack with **Try again** / **Reload page**, plus **`normalizeAnalyzePayload`** / **`normalizeOutlet`** so outlets, timeline, and missing-angle blocks always match what components expect.
+- **`console.log("[NewsLens] /analyze raw response:", payload)`** after JSON parse for debugging; **`sentimentBucket`** tolerates alternate label keys; **`firstSentence`** replaces lookbehind-based splitting; **`Timeline`** renders a friendly empty state when there are no rows.
+- Rebuilt **`frontend/bundle.js`** via **`npm run build`**.
+- Extended **`.cursor/.rules/007-self-review.mdc`** Verification: two topic searches required; white screen on results is a failure.
+
+### Status
+- Re-test: **climate change** and **trade war** searches with backend up; console should stay clean aside from intentional **`[NewsLens]`** analyze log.
+
+## [2026-05-01] - Fix results crash: `toLowerCase` on null bias label
+
+### Bug
+- Error boundary showed **`Cannot read properties of null (reading 'toLowerCase')`** when analyzing topics (e.g. **trade war**) where an outlet had **`dominant_bias_label: null`**.
+
+### Cause
+- **`biasBadgeClass(outlet.dominant_bias_label)`** used `label.toLowerCase()`; default parameter **`""`** does not apply when the argument is explicitly **`null`**, so **`null.toLowerCase()`** threw.
+
+### Fix
+- **`biasBadgeClass`**: `String(label ?? "").toLowerCase()`.
+- **`updateHistory`**: history entries coerced with **`String(item ?? "")`** before compare.
+
+### Status
+- Rebuilt **`frontend/bundle.js`**. Hard-refresh the dashboard and re-run **trade war**.

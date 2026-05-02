@@ -41,6 +41,203 @@ const API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
 const HISTORY_KEY = "newslens-search-history";
 const DEFAULT_SERIES_LABEL = "14d";
 
+function installGlobalErrorHandlers() {
+  const show = (message, extra) => {
+    const line = [message, extra].filter(Boolean).join("\n");
+    let el = document.getElementById("newslens-boot-error");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "newslens-boot-error";
+      el.setAttribute("role", "alert");
+      el.style.cssText = [
+        "position:fixed",
+        "left:0",
+        "right:0",
+        "bottom:0",
+        "z-index:2147483646",
+        "max-height:45vh",
+        "overflow:auto",
+        "padding:12px 16px",
+        "font:13px/1.4 system-ui,Segoe UI,sans-serif",
+        "color:#7f1d1d",
+        "background:#fef2f2",
+        "border-top:1px solid #fecaca",
+        "white-space:pre-wrap",
+        "word-break:break-word",
+      ].join(";");
+      document.body.appendChild(el);
+    }
+    el.textContent = `NewsLens — ${line}`;
+  };
+  window.addEventListener("error", (ev) => {
+    const loc = ev.filename ? `${ev.filename}:${ev.lineno}:${ev.colno}` : "";
+    show(ev.message || "Script error", loc);
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    const r = ev.reason;
+    const msg =
+      r && typeof r === "object" && r !== null && "message" in r ? String(r.message) : String(r);
+    const stack = r && typeof r === "object" && r !== null && r.stack ? String(r.stack) : "";
+    show(`Unhandled promise: ${msg}`, stack);
+  });
+}
+installGlobalErrorHandlers();
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null };
+  }
+
+  static getDerivedStateFromError(err) {
+    return { err };
+  }
+
+  componentDidCatch(err, info) {
+    console.error("[NewsLens] React render error", err, info?.componentStack);
+  }
+
+  render() {
+    if (this.state.err) {
+      return (
+        <div className="card" style={{ margin: "1rem", padding: "1rem", borderColor: "#fecaca" }}>
+          <h2 style={{ color: "#b91c1c", marginTop: 0 }}>Something went wrong rendering results</h2>
+          <p style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>
+            {String(this.state.err?.message || this.state.err)}
+          </p>
+          <button type="button" className="search-btn" onClick={() => this.setState({ err: null })}>
+            Try again
+          </button>
+          <button
+            type="button"
+            className="btn-exit-compare"
+            style={{ marginLeft: 8 }}
+            onClick={() => window.location.reload()}
+          >
+            Reload page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function firstSentence(text) {
+  const t = String(text).trim();
+  if (!t) return "";
+  const idx = t.search(/[.!?](\s|$)/);
+  if (idx === -1) return t;
+  return t.slice(0, idx + 1).trim();
+}
+
+function normalizeOutlet(o) {
+  if (!o || typeof o !== "object") {
+    return {
+      source: "Unknown",
+      article_count: 0,
+      avg_sentiment_score: null,
+      avg_bias_score: null,
+      sentiment_labels: {},
+      bias_labels: {},
+      dominant_sentiment_label: null,
+      dominant_bias_label: null,
+      missing_angle: null,
+      headline: null,
+    };
+  }
+  const sl =
+    o.sentiment_labels && typeof o.sentiment_labels === "object" ? { ...o.sentiment_labels } : {};
+  const bl = o.bias_labels && typeof o.bias_labels === "object" ? { ...o.bias_labels } : {};
+  return {
+    source: typeof o.source === "string" && o.source.trim() ? o.source.trim() : "Unknown",
+    article_count:
+      typeof o.article_count === "number" && Number.isFinite(o.article_count) ? o.article_count : 0,
+    avg_sentiment_score:
+      typeof o.avg_sentiment_score === "number" && Number.isFinite(o.avg_sentiment_score)
+        ? o.avg_sentiment_score
+        : null,
+    avg_bias_score:
+      typeof o.avg_bias_score === "number" && Number.isFinite(o.avg_bias_score)
+        ? o.avg_bias_score
+        : null,
+    sentiment_labels: sl,
+    bias_labels: bl,
+    dominant_sentiment_label:
+      o.dominant_sentiment_label == null ? null : String(o.dominant_sentiment_label),
+    dominant_bias_label: o.dominant_bias_label == null ? null : String(o.dominant_bias_label),
+    missing_angle:
+      o.missing_angle == null || o.missing_angle === ""
+        ? null
+        : typeof o.missing_angle === "string"
+          ? o.missing_angle
+          : String(o.missing_angle),
+    headline: o.headline == null ? null : String(o.headline),
+  };
+}
+
+function normalizeMissingAngleBlock(ma) {
+  if (!ma || typeof ma !== "object") {
+    return {
+      value: null,
+      reasoning: "",
+      confidence: null,
+      from_cache: false,
+      error: false,
+      error_message: null,
+    };
+  }
+  return {
+    value:
+      ma.value == null || ma.value === ""
+        ? null
+        : typeof ma.value === "string"
+          ? ma.value
+          : String(ma.value),
+    reasoning:
+      ma.reasoning == null ? "" : typeof ma.reasoning === "string" ? ma.reasoning : String(ma.reasoning),
+    confidence: ma.confidence ?? null,
+    from_cache: Boolean(ma.from_cache),
+    error: Boolean(ma.error),
+    error_message: ma.error_message == null ? null : String(ma.error_message),
+  };
+}
+
+function normalizeTimeline(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    if (!row || typeof row !== "object") return { date: "" };
+    const copy = { ...row };
+    copy.date =
+      typeof copy.date === "string" ? copy.date : copy.date != null ? String(copy.date) : "";
+    return copy;
+  });
+}
+
+function normalizeAnalyzePayload(raw) {
+  const d = raw && typeof raw === "object" ? raw : {};
+  const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
+  return {
+    topic: typeof d.topic === "string" ? d.topic : "",
+    outlets,
+    timeline: normalizeTimeline(d.timeline),
+    missing_angle: normalizeMissingAngleBlock(d.missing_angle),
+    fetch: d.fetch && typeof d.fetch === "object" ? d.fetch : {},
+    scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
+  };
+}
+
+function sentimentBucket(labels, keys) {
+  const L = labels && typeof labels === "object" ? labels : {};
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(L, k) && L[k] != null) {
+      const n = Number(L[k]);
+      return Number.isFinite(n) ? n : 0;
+    }
+  }
+  return 0;
+}
+
 const OUTLET_COLORS = {
   CNN: "#3B82F6",
   Reuters: "#9CA3AF",
@@ -49,8 +246,8 @@ const OUTLET_COLORS = {
   "Al Jazeera English": "#8B5CF6",
 };
 
-const biasBadgeClass = (label = "") => {
-  const normalized = label.toLowerCase();
+const biasBadgeClass = (label) => {
+  const normalized = String(label ?? "").toLowerCase();
   if (normalized.includes("left")) return "badge blue-bg";
   if (normalized.includes("right")) return "badge red-bg";
   return "badge gray-bg";
@@ -68,7 +265,12 @@ const readHistory = () => {
 function updateHistory(term) {
   const topic = term.trim();
   if (!topic) return;
-  const next = [topic, ...readHistory().filter((item) => item.toLowerCase() !== topic.toLowerCase())].slice(0, 5);
+  const next = [
+    topic,
+    ...readHistory().filter(
+      (item) => String(item ?? "").toLowerCase() !== topic.toLowerCase()
+    ),
+  ].slice(0, 5);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
 
@@ -96,10 +298,11 @@ async function fetchAnalysis(topic) {
     throw new Error(text || "Failed to fetch analysis.");
   }
   const payload = await response.json();
+  console.log("[NewsLens] /analyze raw response:", payload);
   if (!payload.success) {
     throw new Error(payload.error || "Backend returned an unsuccessful response.");
   }
-  return payload.data;
+  return normalizeAnalyzePayload(payload.data);
 }
 
 async function fetchOutletProfile(outlet) {
@@ -131,7 +334,8 @@ async function fetchTopicTrend(topic, days = 7) {
 }
 
 function computeBiasDistribution(outlets) {
-  const active = outlets.filter((o) => o.article_count > 0);
+  const list = Array.isArray(outlets) ? outlets : [];
+  const active = list.filter((o) => (o.article_count || 0) > 0);
   if (!active.length) {
     return { text: "No outlets with articles for this topic yet.", left: 0, center: 0, right: 0 };
   }
@@ -155,7 +359,8 @@ function computeBiasDistribution(outlets) {
 }
 
 function extremOutlets(outlets) {
-  const withBias = outlets.filter((o) => o.article_count > 0 && typeof o.avg_bias_score === "number");
+  const list = Array.isArray(outlets) ? outlets : [];
+  const withBias = list.filter((o) => (o.article_count || 0) > 0 && typeof o.avg_bias_score === "number");
   if (!withBias.length) return { left: null, right: null };
   const sorted = [...withBias].sort((a, b) => a.avg_bias_score - b.avg_bias_score);
   return { left: sorted[0].source, right: sorted[sorted.length - 1].source };
@@ -174,6 +379,7 @@ function LoadingSkeleton() {
 }
 
 function BiasSpectrum({ outlets }) {
+  const list = Array.isArray(outlets) ? outlets : [];
   return (
     <section id="dashboard" className="bias-hero card">
       <div className="section-head">
@@ -184,8 +390,8 @@ function BiasSpectrum({ outlets }) {
         <div className="stop left" />
         <div className="stop center" />
         <div className="stop right" />
-        {outlets
-          .filter((outlet) => outlet.article_count > 0)
+        {list
+          .filter((outlet) => (outlet.article_count || 0) > 0)
           .map((outlet) => (
             <div
               key={outlet.source}
@@ -321,9 +527,10 @@ function OutletCard({ outlet, compareSelected, onCompareClick }) {
 
 function OutletGrid({ outlets, compareSelection, onCompareClick }) {
   const selectedSet = new Set(compareSelection);
+  const list = Array.isArray(outlets) ? outlets : [];
   return (
     <section id="outlets" className="outlets-grid">
-      {outlets.map((outlet) => (
+      {list.map((outlet) => (
         <OutletCard
           key={outlet.source}
           outlet={outlet}
@@ -418,6 +625,7 @@ function ComparisonPanel({ pair, outlets, onExit }) {
 }
 
 function HeadlineComparison({ outlets }) {
+  const list = Array.isArray(outlets) ? outlets : [];
   return (
     <section id="topics" className="card headlines">
       <div className="section-head">
@@ -425,7 +633,7 @@ function HeadlineComparison({ outlets }) {
         <span>Same topic, different framing</span>
       </div>
       <div className="headline-grid">
-        {outlets.map((outlet) => (
+        {list.map((outlet) => (
           <article key={outlet.source} className="headline-item">
             <p className="headline-source">{outlet.source}</p>
             <p className="headline-text">{outlet.headline || "No headline available for this topic yet."}</p>
@@ -439,11 +647,11 @@ function HeadlineComparison({ outlets }) {
 function SentimentDistribution({ outlets }) {
   const data = useMemo(
     () =>
-      outlets.map((outlet) => ({
-        outlet: outlet.source,
-        positive: outlet.sentiment_labels?.Positive || 0,
-        neutral: outlet.sentiment_labels?.Neutral || 0,
-        negative: outlet.sentiment_labels?.Negative || 0,
+      (outlets || []).map((outlet) => ({
+        outlet: outlet.source || "Unknown",
+        positive: sentimentBucket(outlet.sentiment_labels, ["Positive", "positive"]),
+        neutral: sentimentBucket(outlet.sentiment_labels, ["Neutral", "neutral"]),
+        negative: sentimentBucket(outlet.sentiment_labels, ["Negative", "negative"]),
       })),
     [outlets]
   );
@@ -473,7 +681,19 @@ function SentimentDistribution({ outlets }) {
 }
 
 function Timeline({ timeline, outlets }) {
-  const activeOutlets = outlets.filter((outlet) => outlet.article_count > 0);
+  const rows = Array.isArray(timeline) ? timeline : [];
+  const activeOutlets = (outlets || []).filter((outlet) => (outlet.article_count || 0) > 0);
+  if (!rows.length) {
+    return (
+      <section className="card chart-card">
+        <div className="section-head">
+          <h2>Narrative Timeline</h2>
+          <span>Bias score trend over the last 7 days</span>
+        </div>
+        <p className="chart-status">No timeline data for this window yet.</p>
+      </section>
+    );
+  }
   return (
     <section className="card chart-card">
       <div className="section-head">
@@ -482,7 +702,7 @@ function Timeline({ timeline, outlets }) {
       </div>
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={timeline}>
+          <LineChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis dataKey="date" />
             <YAxis domain={[-1, 1]} />
@@ -507,7 +727,8 @@ function Timeline({ timeline, outlets }) {
 }
 
 function TopicTrendChart({ topic, outlets }) {
-  const activeOutlets = outlets.filter((outlet) => outlet.article_count > 0);
+  const ol = Array.isArray(outlets) ? outlets : [];
+  const activeOutlets = ol.filter((outlet) => (outlet.article_count || 0) > 0);
   const q = useQuery({
     queryKey: ["topic-trend", topic, 7],
     queryFn: () => fetchTopicTrend(topic, 7),
@@ -595,7 +816,7 @@ function ResultsHeader({ topic, outlets, missingAngle, shareCardRef, onShare, sh
   const teaser = useMemo(() => {
     const v = missingAngle?.value;
     if (!v || typeof v !== "string") return "Perspective gaps may appear as more outlets publish.";
-    const one = v.split(/(?<=[.!?])\s+/)[0] || v;
+    const one = firstSentence(v) || v;
     return one.length > 140 ? `${one.slice(0, 137)}…` : one;
   }, [missingAngle]);
 
@@ -630,6 +851,49 @@ function ResultsHeader({ topic, outlets, missingAngle, shareCardRef, onShare, sh
   );
 }
 
+function AnalysisResults({
+  data,
+  compareSelection,
+  onCompareClick,
+  onExitComparison,
+  shareCardRef,
+  onShare,
+  shareBusy,
+  shareError,
+}) {
+  const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
+  const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
+  const comparing = compareSelection.length === 2;
+
+  return (
+    <main className="results-stack">
+      <ResultsHeader
+        topic={data.topic || ""}
+        outlets={outlets}
+        missingAngle={data.missing_angle}
+        shareCardRef={shareCardRef}
+        onShare={onShare}
+        shareBusy={shareBusy}
+        shareError={shareError}
+      />
+      {comparing ? (
+        <ComparisonPanel pair={compareSelection} outlets={outlets} onExit={onExitComparison} />
+      ) : null}
+      <BiasSpectrum outlets={outlets} />
+      <OutletGrid outlets={outlets} compareSelection={compareSelection} onCompareClick={onCompareClick} />
+      <HeadlineComparison outlets={outlets} />
+      <div className="chart-grid">
+        <SentimentDistribution outlets={outlets} />
+        <div className="timeline-column">
+          <Timeline timeline={timeline} outlets={outlets} />
+          <TopicTrendChart topic={data.topic || ""} outlets={outlets} />
+        </div>
+      </div>
+      <MissingAngleCard missingAngle={data.missing_angle} />
+    </main>
+  );
+}
+
 function Hero({
   searchInput,
   setSearchInput,
@@ -661,7 +925,11 @@ function Hero({
           Analyze
         </button>
       </form>
-      {isError ? <p className="inline-error">Could not load analysis: {error.message}</p> : null}
+      {isError ? (
+        <p className="inline-error">
+          Could not load analysis: {error?.message != null ? String(error.message) : String(error)}
+        </p>
+      ) : null}
       <div className="history-row">
         {history.map((item) => (
           <button key={item} className="history-chip" onClick={() => runSearch(item)}>
@@ -770,9 +1038,6 @@ function App() {
   };
 
   const data = query.data;
-  const outlets = data?.outlets || [];
-  const timeline = data?.timeline || [];
-  const comparing = compareSelection.length === 2;
 
   return (
     <div className="page">
@@ -794,31 +1059,18 @@ function App() {
       {query.isFetching ? <LoadingSkeleton /> : null}
 
       {data ? (
-        <main className="results-stack">
-          <ResultsHeader
-            topic={data.topic}
-            outlets={outlets}
-            missingAngle={data.missing_angle}
+        <ErrorBoundary key={topic}>
+          <AnalysisResults
+            data={data}
+            compareSelection={compareSelection}
+            onCompareClick={handleCompareClick}
+            onExitComparison={exitComparison}
             shareCardRef={shareCardRef}
             onShare={handleShare}
             shareBusy={shareBusy}
             shareError={shareError}
           />
-          {comparing ? (
-            <ComparisonPanel pair={compareSelection} outlets={outlets} onExit={exitComparison} />
-          ) : null}
-          <BiasSpectrum outlets={outlets} />
-          <OutletGrid outlets={outlets} compareSelection={compareSelection} onCompareClick={handleCompareClick} />
-          <HeadlineComparison outlets={outlets} />
-          <div className="chart-grid">
-            <SentimentDistribution outlets={outlets} />
-            <div className="timeline-column">
-              <Timeline timeline={timeline} outlets={outlets} />
-              <TopicTrendChart topic={data.topic} outlets={outlets} />
-            </div>
-          </div>
-          <MissingAngleCard missingAngle={data.missing_angle} />
-        </main>
+        </ErrorBoundary>
       ) : null}
     </div>
   );
