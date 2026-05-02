@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import traceback
 from datetime import datetime, timezone
@@ -12,6 +13,9 @@ from sqlalchemy.orm import Session
 
 from .database import Article, TopicAnalysis
 from .news_fetcher import ALLOWED_OUTLETS
+
+logger = logging.getLogger(__name__)
+MIN_OUTLET_SUMMARIES = 3
 
 
 MISSING_ANGLE_SYSTEM_PROMPT = """You are a media analysis assistant for NewsLens.
@@ -44,29 +48,25 @@ class LLMAnalyzer:
         return " ".join(words[:150]).strip()
 
     def _select_outlet_article_summaries(self, topic: str, db: Session) -> list[dict[str, str]]:
-        rows = db.execute(
-            select(Article.source, Article.title, Article.content)
-            .where(Article.topic == topic)
-            .order_by(Article.published_at.desc().nullslast(), Article.fetched_at.desc())
-        ).all()
-
+        """One summary per allowed outlet: latest article title + body (trimmed to ~150 words)."""
         summaries: list[dict[str, str]] = []
-        seen_sources: set[str] = set()
-        for row in rows:
-            source = row.source
-            if source in seen_sources:
+        for source in ALLOWED_OUTLETS:
+            row = db.execute(
+                select(Article.title, Article.content)
+                .where(Article.topic == topic, Article.source == source)
+                .order_by(Article.published_at.desc().nullslast(), Article.fetched_at.desc())
+                .limit(1)
+            ).first()
+            if not row:
                 continue
-            seen_sources.add(source)
-            combined = f"{row.title}. {row.content}".strip()
+            title = (row.title or "").strip()
+            body = (row.content or "").strip()
+            combined = f"{title}. {body}".strip() if body else title
+            if not combined:
+                continue
             summary = self._summarize_to_150_words(combined)
             summaries.append({"source": source, "summary": summary})
-            if len(summaries) >= 8:
-                break
-
-        if len(summaries) < 4:
-            # If coverage is sparse, keep what we have; caller can decide how to proceed.
-            return summaries
-        return summaries[:8]
+        return summaries
 
     @staticmethod
     def _extract_text_content(response: Any) -> str:
@@ -173,6 +173,12 @@ class LLMAnalyzer:
             }
 
         outlet_summaries = self._select_outlet_article_summaries(normalized_topic, db)
+        logger.info(
+            "Missing angle Claude input: topic=%r outlet_summary_count=%s sources=%s",
+            normalized_topic,
+            len(outlet_summaries),
+            [s["source"] for s in outlet_summaries],
+        )
         if not outlet_summaries:
             return {
                 "success": True,
@@ -187,7 +193,7 @@ class LLMAnalyzer:
                 },
                 "error": None,
             }
-        if len(outlet_summaries) < 4:
+        if len(outlet_summaries) < MIN_OUTLET_SUMMARIES:
             return {
                 "success": True,
                 "data": {
@@ -197,12 +203,19 @@ class LLMAnalyzer:
                     "outlet_missing_angles": {source: None for source in ALLOWED_OUTLETS},
                     "from_cache": False,
                     "error": True,
-                    "error_message": "At least 4 outlet summaries are required for missing-angle analysis.",
+                    "error_message": (
+                        f"At least {MIN_OUTLET_SUMMARIES} outlet summaries are required for missing-angle analysis."
+                    ),
                 },
                 "error": None,
             }
 
         try:
+            logger.info(
+                "Calling Claude for missing angle with %d outlet summaries (topic=%r)",
+                len(outlet_summaries),
+                normalized_topic,
+            )
             response = self.client.messages.create(
                 model=LLM_MODEL,
                 system=MISSING_ANGLE_SYSTEM_PROMPT,

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import desc, select, text
+from sqlalchemy import desc, exists, select, text
 from sqlalchemy.orm import Session
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
@@ -27,6 +27,7 @@ _extra_cors = [
 ]
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
+from .bias_utils import bias_distribution_from_outlets
 from .database import Article, ArticleScore, create_tables, get_db
 from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import ALLOWED_OUTLETS, NewsFetcherError, fetch_and_store_articles
@@ -78,6 +79,17 @@ def get_nlp_pipeline() -> NLPPipeline:
     if _nlp_pipeline is None:
         return NLPPipeline.get_instance()
     return _nlp_pipeline
+
+
+def _topic_has_unscored_articles(topic: str, db: Session) -> bool:
+    """True if any article for this topic has no row in article_scores."""
+    row = db.scalar(
+        select(Article.id)
+        .where(Article.topic == topic)
+        .where(~exists(select(1).select_from(ArticleScore).where(ArticleScore.article_id == Article.id)))
+        .limit(1)
+    )
+    return row is not None
 
 
 def _build_outlet_scores(topic: str, db: Session) -> dict:
@@ -398,6 +410,8 @@ async def analyze_topic(
         fetch_meta = {"cached": True, "count": 0, "saved_urls": [], "warning": str(exc)}
 
     score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
+    if _topic_has_unscored_articles(normalized_topic, db):
+        score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
     score_data = _build_outlet_scores(normalized_topic, db)
 
     llm_result = LLMAnalyzer().generate_missing_angle(normalized_topic, db)
@@ -413,6 +427,8 @@ async def analyze_topic(
         merged_outlet["missing_angle"] = outlet_missing_angles.get(source)
         merged_outlet["headline"] = headlines.get(source)
         outlets_with_missing_angle.append(merged_outlet)
+
+    bias_distribution = bias_distribution_from_outlets(outlets_with_missing_angle)
 
     reasoning = (
         f"Confidence: {llm_data.get('confidence') or 'unknown'}. "
@@ -442,6 +458,7 @@ async def analyze_topic(
             },
             "outlet_count": score_data["outlet_count"],
             "outlets": outlets_with_missing_angle,
+            "bias_distribution": bias_distribution,
             "timeline": timeline,
         },
         "error": None,

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import Article
+from .nlp_pipeline import NLPPipeline
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
@@ -126,4 +127,7 @@ async def fetch_and_store_articles(topic: str, db: Session, page_size: int = 25)
         saved_urls.append(url)
 
     db.commit()
+    if saved_urls:
+        # Ensure every persisted article is scored before any consumer reads the DB.
+        NLPPipeline.get_instance().score_topic_articles(topic, db)
     return {"cached": False, "count": len(saved_urls), "saved_urls": saved_urls}

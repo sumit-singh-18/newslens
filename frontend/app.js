@@ -214,6 +214,15 @@ function normalizeTimeline(rows) {
   });
 }
 
+function normalizeBiasDistribution(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const lp = Number(raw.left_pct);
+  const cp = Number(raw.center_pct);
+  const rp = Number(raw.right_pct);
+  if (![lp, cp, rp].every((n) => Number.isFinite(n))) return null;
+  return { left_pct: lp, center_pct: cp, right_pct: rp };
+}
+
 function normalizeAnalyzePayload(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
@@ -224,6 +233,7 @@ function normalizeAnalyzePayload(raw) {
     missing_angle: normalizeMissingAngleBlock(d.missing_angle),
     fetch: d.fetch && typeof d.fetch === "object" ? d.fetch : {},
     scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
+    bias_distribution: normalizeBiasDistribution(d.bias_distribution),
   };
 }
 
@@ -246,10 +256,23 @@ const OUTLET_COLORS = {
   "Al Jazeera English": "#8B5CF6",
 };
 
+/** Align with backend bias_utils: map model labels to left / center / right buckets. */
+function biasSpectrumBucket(label) {
+  const s = String(label ?? "")
+    .trim()
+    .toLowerCase();
+  if (!s) return "center";
+  const leftHints = ["left", "liberal", "progressive", "socialist", "democrat"];
+  const rightHints = ["right", "conservative", "republican", "nationalist", "populist"];
+  if (leftHints.some((h) => s.includes(h))) return "left";
+  if (rightHints.some((h) => s.includes(h))) return "right";
+  return "center";
+}
+
 const biasBadgeClass = (label) => {
-  const normalized = String(label ?? "").toLowerCase();
-  if (normalized.includes("left")) return "badge blue-bg";
-  if (normalized.includes("right")) return "badge red-bg";
+  const bucket = biasSpectrumBucket(label);
+  if (bucket === "left") return "badge blue-bg";
+  if (bucket === "right") return "badge red-bg";
   return "badge gray-bg";
 };
 
@@ -333,7 +356,19 @@ async function fetchTopicTrend(topic, days = 7) {
   return payload.data;
 }
 
-function computeBiasDistribution(outlets) {
+function computeBiasDistribution(outlets, apiDist) {
+  const fromApi = normalizeBiasDistribution(apiDist);
+  if (fromApi) {
+    const lp = fromApi.left_pct;
+    const cp = fromApi.center_pct;
+    const rp = fromApi.right_pct;
+    return {
+      left: lp,
+      center: cp,
+      right: rp,
+      text: `${lp}% left, ${cp}% center, ${rp}% right`,
+    };
+  }
   const list = Array.isArray(outlets) ? outlets : [];
   const active = list.filter((o) => (o.article_count || 0) > 0);
   if (!active.length) {
@@ -343,9 +378,9 @@ function computeBiasDistribution(outlets) {
   let center = 0;
   let right = 0;
   for (const o of active) {
-    const label = (o.dominant_bias_label || "").toLowerCase();
-    if (label.includes("left")) left += 1;
-    else if (label.includes("right")) right += 1;
+    const bucket = biasSpectrumBucket(o.dominant_bias_label);
+    if (bucket === "left") left += 1;
+    else if (bucket === "right") right += 1;
     else center += 1;
   }
   const t = active.length;
@@ -810,8 +845,11 @@ function Header({ onStartAnalysis }) {
   );
 }
 
-function ResultsHeader({ topic, outlets, missingAngle, shareCardRef, onShare, shareBusy, shareError }) {
-  const dist = useMemo(() => computeBiasDistribution(outlets), [outlets]);
+function ResultsHeader({ topic, outlets, biasDistribution, missingAngle, shareCardRef, onShare, shareBusy, shareError }) {
+  const dist = useMemo(
+    () => computeBiasDistribution(outlets, biasDistribution),
+    [outlets, biasDistribution]
+  );
   const ex = useMemo(() => extremOutlets(outlets), [outlets]);
   const teaser = useMemo(() => {
     const v = missingAngle?.value;
@@ -870,6 +908,7 @@ function AnalysisResults({
       <ResultsHeader
         topic={data.topic || ""}
         outlets={outlets}
+        biasDistribution={data.bias_distribution}
         missingAngle={data.missing_angle}
         shareCardRef={shareCardRef}
         onShare={onShare}

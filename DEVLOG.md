@@ -294,3 +294,16 @@ This file tracks all major development progress, decisions, challenges, and solu
 
 ### Status
 - Rebuilt **`frontend/bundle.js`**. Hard-refresh the dashboard and re-run **trade war**.
+
+## [2026-05-01] - Data logic: bias mix, full NLP scoring, missing angle
+
+### What changed
+- **Bias header percentages (BUG 1)**: Server now computes **`bias_distribution`** from each outlet’s **dominant bias label** using the same **left / center / right** keyword bucketing as the UI (not raw scores). The results header prefers this API field so the mix matches outlet badges. Shared logic lives in **`backend/bias_utils.py`**; frontend mirrors it in **`biasSpectrumBucket`** for fallback and badge colors.
+- **Missing scores for some outlets (BUG 2)**: After a non-cached NewsAPI write, **`news_fetcher.py`** runs **`NLPPipeline.score_topic_articles`** so new rows get **`article_scores` immediately. **`/analyze`** calls scoring, then if any article still has no score (e.g. partial failure), it runs scoring again.
+- **Missing angle / “4 summaries” (BUG 3)**: **`llm_analyzer.py`** builds one summary per **allowed outlet** (latest article: title + body, trimmed to ~150 words) in fixed source order, logs summary **count and sources** before calling Claude, and requires **at least 3** outlets (was 4) before the LLM call.
+
+### Tests
+- Added **`backend/tests/test_bias_utils.py`**. Full **`backend/tests`** pass after **`pip install -r backend/requirements.txt`**. **`npm run build`** in **`frontend/`** rebundles **`bundle.js`**.
+
+### Status
+- Re-run a multi-outlet topic with the backend up; check logs for **`Missing angle Claude input`** and confirm BBC/Reuters show labels when articles exist for the topic.
