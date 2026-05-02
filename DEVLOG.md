@@ -307,3 +307,18 @@ This file tracks all major development progress, decisions, challenges, and solu
 
 ### Status
 - Re-run a multi-outlet topic with the backend up; check logs for **`Missing angle Claude input`** and confirm BBC/Reuters show labels when articles exist for the topic.
+
+## [2026-05-01] - Dynamic outlets, pre-persist NLP, framing summaries
+
+### What changed
+- **Removed hardcoded five outlets.** **`news_fetcher.py`** queries NewsAPI **`everything`** with **`pageSize=100`** against a **pool of 15** IDs (`NEWSAPI_BROAD_SOURCES`), groups by **`source.name`**, keeps outlets with **≥2 articles**, takes **top 5 by volume**, then runs **`NLPPipeline.analyze_batch`** on all retained texts **before** inserting **`Article`** / **`ArticleScore`** rows. Topic rows are **replaced** on fresh fetch (delete prior topic articles + framing).
+- **Extractive framing (`backend/framing_extract.py`)**: Per selected outlet, concatenate **title + first 100 words** for each article, pick **two** sentences with highest sentiment charge (**1 − P(neutral)**), persist on **`TopicOutletFraming`** (`topic`, `source`, `framing_summary`).
+- **`/analyze`**: Builds outlet payload from **`compute_selected_outlets_from_db`** / fetch **`selected_outlets`**; **`bias_distribution`** uses **fixed denominator 5** (`left_pct = round(100 * left_count / 5)`); exposes **`most_left_outlet`** / **`most_right_outlet`** via **`extrem_bias_outlets`** (min / max **`avg_bias_score`**). Timeline and topic-volume charts key only **dynamic** outlet names.
+- **`llm_analyzer.py`**: Missing-angle JSON schema uses **dynamic outlet list** from selection (no fixed five keys).
+- **Frontend**: Results header bias mix uses **API percentages only**; spectrum extremes prefer **`most_left_outlet` / `most_right_outlet`**; outlet cards show **`framing_summary`** first.
+
+### Tests / build
+- **`PYTHONPATH=. python3 -m pytest backend/tests -q`**: 4 passed. **`npm run build`** rebundles **`frontend/bundle.js`**.
+
+### Notes
+- NewsAPI **`sources`** IDs must all be valid or the request fails; pool matches the product brief (`the-guardian-uk`, etc.). Adjust IDs against NewsAPI’s sources index if a publisher slug errors at runtime.

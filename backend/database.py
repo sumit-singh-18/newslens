@@ -4,7 +4,7 @@ import os
 from datetime import date, datetime, timezone
 from typing import Any, Generator, Optional
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, String, Text, create_engine
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -66,6 +66,22 @@ class ArticleScore(Base):
     )
 
     article: Mapped[Article] = relationship(back_populates="scores")
+
+
+class TopicOutletFraming(Base):
+    """One extractive framing summary per (topic, outlet) for outlet cards."""
+
+    __tablename__ = "topic_outlet_framing"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    topic: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(255), nullable=False)
+    framing_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (UniqueConstraint("topic", "source", name="uq_topic_outlet_framing"),)
 
 
 class TopicAnalysis(Base):

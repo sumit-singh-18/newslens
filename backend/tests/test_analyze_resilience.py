@@ -16,28 +16,31 @@ from backend.llm_analyzer import LLMAnalyzer
 def _seed_articles_with_scores(db: Session, topic: str) -> None:
     now_utc = datetime.now(timezone.utc)
     sources = ["BBC News", "CNN", "Fox News", "Al Jazeera English"]
-    for idx, source in enumerate(sources):
-        article = Article(
-            topic=topic,
-            source=source,
-            url=f"https://example.com/{idx}",
-            title=f"{source} title",
-            content=f"{source} article content " + "word " * 170,
-            fetched_at=now_utc,
-            snapshot_date=now_utc.date(),
-        )
-        db.add(article)
-        db.flush()
-        db.add(
-            ArticleScore(
-                article_id=article.id,
-                sentiment_label="Neutral",
-                sentiment_score=0.75,
-                bias_label="Center",
-                bias_score=0.61,
-                raw_scores={"sentiment": {"Neutral": 0.75}, "bias": {"Center": 0.61}},
+    n = 0
+    for source in sources:
+        for _ in range(2):
+            article = Article(
+                topic=topic,
+                source=source,
+                url=f"https://example.com/{n}",
+                title=f"{source} title",
+                content=f"{source} article content " + "word " * 170,
+                fetched_at=now_utc,
+                snapshot_date=now_utc.date(),
             )
-        )
+            db.add(article)
+            db.flush()
+            db.add(
+                ArticleScore(
+                    article_id=article.id,
+                    sentiment_label="Neutral",
+                    sentiment_score=0.75,
+                    bias_label="Center",
+                    bias_score=0.61,
+                    raw_scores={"sentiment": {"Neutral": 0.75}, "bias": {"Center": 0.61}},
+                )
+            )
+            n += 1
     db.commit()
 
 
@@ -94,12 +97,17 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
 
     class _FakeNLP:
         def score_topic_articles(self, topic: str, db: Session):
-            return {"topic": topic, "article_count": 4, "scored_count": 4}
+            return {"topic": topic, "article_count": 8, "scored_count": 8}
 
     async def _fake_fetch_and_store_articles(topic: str, db: Session, page_size: int = 25):
-        return {"cached": True, "count": 4, "saved_urls": []}
+        return {
+            "cached": True,
+            "count": 8,
+            "saved_urls": [],
+            "selected_outlets": ["Al Jazeera English", "BBC News", "CNN", "Fox News"],
+        }
 
-    def _fake_generate_missing_angle(self, topic: str, db: Session):
+    def _fake_generate_missing_angle(self, topic: str, db: Session, outlet_sources=None):
         return {
             "success": True,
             "data": {
@@ -107,11 +115,10 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
                 "missing_angle": None,
                 "confidence": None,
                 "outlet_missing_angles": {
+                    "Al Jazeera English": None,
                     "BBC News": None,
                     "CNN": None,
                     "Fox News": None,
-                    "Al Jazeera English": None,
-                    "Reuters": None,
                 },
                 "from_cache": False,
                 "error": True,
@@ -132,11 +139,11 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
     assert response.status_code == 200
     assert payload["success"] is True
     assert payload["data"]["topic"] == topic
-    assert payload["data"]["scoring"]["article_count"] == 4
-    assert payload["data"]["scoring"]["scored_count"] == 4
+    assert payload["data"]["scoring"]["article_count"] == 8
+    assert payload["data"]["scoring"]["scored_count"] == 8
     assert payload["data"]["missing_angle"]["value"] is None
     assert payload["data"]["missing_angle"]["error"] is True
     assert "error_message" in payload["data"]["missing_angle"]
-    assert len(payload["data"]["outlets"]) == 5
+    assert len(payload["data"]["outlets"]) == 4
 
     main.app.dependency_overrides.clear()

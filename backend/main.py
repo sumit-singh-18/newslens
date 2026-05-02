@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import desc, exists, select, text
+from sqlalchemy import desc, exists, func, select, text
 from sqlalchemy.orm import Session
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
@@ -27,10 +27,10 @@ _extra_cors = [
 ]
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
-from .bias_utils import bias_distribution_from_outlets
-from .database import Article, ArticleScore, create_tables, get_db
+from .bias_utils import bias_distribution_from_outlets, extrem_bias_outlets
+from .database import Article, ArticleScore, TopicOutletFraming, create_tables, get_db
 from .llm_analyzer import LLMAnalyzer
-from .news_fetcher import ALLOWED_OUTLETS, NewsFetcherError, fetch_and_store_articles
+from .news_fetcher import NewsFetcherError, compute_selected_outlets_from_db, fetch_and_store_articles
 
 DEFAULT_TOPIC_TREND_DAYS = 7
 DEFAULT_OUTLET_SERIES_DAYS = 14
@@ -81,6 +81,15 @@ def get_nlp_pipeline() -> NLPPipeline:
     return _nlp_pipeline
 
 
+def _load_framing_map(topic: str, db: Session) -> dict[str, str]:
+    rows = db.execute(
+        select(TopicOutletFraming.source, TopicOutletFraming.framing_summary).where(
+            TopicOutletFraming.topic == topic
+        )
+    ).all()
+    return {str(r[0]): str(r[1]) for r in rows}
+
+
 def _topic_has_unscored_articles(topic: str, db: Session) -> bool:
     """True if any article for this topic has no row in article_scores."""
     row = db.scalar(
@@ -92,7 +101,12 @@ def _topic_has_unscored_articles(topic: str, db: Session) -> bool:
     return row is not None
 
 
-def _build_outlet_scores(topic: str, db: Session) -> dict:
+def _build_outlet_scores(
+    topic: str,
+    db: Session,
+    ordered_sources: list[str],
+    framing_by_source: dict[str, str],
+) -> dict:
     rows = db.execute(
         select(
             Article.id,
@@ -147,7 +161,7 @@ def _build_outlet_scores(topic: str, db: Session) -> dict:
         )
 
     outlets = []
-    for source in sorted(ALLOWED_OUTLETS):
+    for source in ordered_sources:
         if source not in outlet_scores:
             outlets.append(
                 {
@@ -159,6 +173,7 @@ def _build_outlet_scores(topic: str, db: Session) -> dict:
                     "bias_labels": {},
                     "dominant_sentiment_label": None,
                     "dominant_bias_label": None,
+                    "framing_summary": framing_by_source.get(source),
                 }
             )
             continue
@@ -171,6 +186,7 @@ def _build_outlet_scores(topic: str, db: Session) -> dict:
             stats["sentiment_labels"], key=lambda label: stats["sentiment_labels"][label]
         )
         stats["dominant_bias_label"] = max(stats["bias_labels"], key=lambda label: stats["bias_labels"][label])
+        stats["framing_summary"] = framing_by_source.get(source)
         outlets.append(stats)
 
     return {
@@ -181,22 +197,24 @@ def _build_outlet_scores(topic: str, db: Session) -> dict:
     }
 
 
-def _build_headline_map(topic: str, db: Session) -> dict[str, str | None]:
+def _build_headline_map(topic: str, db: Session, sources: list[str]) -> dict[str, str | None]:
     rows = db.execute(
         select(Article.source, Article.title)
         .where(Article.topic == topic)
         .order_by(Article.published_at.desc().nullslast(), Article.fetched_at.desc())
     ).all()
 
-    headlines: dict[str, str | None] = {source: None for source in ALLOWED_OUTLETS}
+    headlines: dict[str, str | None] = {source: None for source in sources}
     for row in rows:
+        if row.source not in headlines:
+            continue
         if headlines.get(row.source):
             continue
         headlines[row.source] = row.title
     return headlines
 
 
-def _build_bias_timeline(topic: str, db: Session, days: int = 7) -> list[dict]:
+def _build_bias_timeline(topic: str, db: Session, outlet_names: list[str], days: int = 7) -> list[dict]:
     end_date = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=days - 1)
     rows = db.execute(
@@ -227,7 +245,7 @@ def _build_bias_timeline(topic: str, db: Session, days: int = 7) -> list[dict]:
     while day_cursor <= end_date:
         key = day_cursor.isoformat()
         buckets[key] = {"date": key}
-        for source in ALLOWED_OUTLETS:
+        for source in outlet_names:
             buckets[key][source] = None
         day_cursor += timedelta(days=1)
 
@@ -317,7 +335,7 @@ def _outlet_historical_profile(outlet: str, db: Session) -> dict:
     }
 
 
-def _topic_volume_trend(topic: str, db: Session, days: int) -> list[dict]:
+def _topic_volume_trend(topic: str, db: Session, days: int, outlet_names: list[str]) -> list[dict]:
     """Article counts per calendar day (UTC) and source from fetched_at."""
     normalized = topic.strip()
     end_date = datetime.now(timezone.utc).date()
@@ -350,7 +368,7 @@ def _topic_volume_trend(topic: str, db: Session, days: int) -> list[dict]:
     result = []
     for day_key in bucket_keys:
         row = {"date": day_key}
-        for src in ALLOWED_OUTLETS:
+        for src in outlet_names:
             row[src] = counts.get((day_key, src), 0)
         result.append(row)
 
@@ -381,13 +399,23 @@ def get_scores(
     if not normalized_topic:
         raise HTTPException(status_code=400, detail="Topic must not be empty.")
 
-    score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
+    if _topic_has_unscored_articles(normalized_topic, db):
+        score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
+    else:
+        n_art = db.scalar(select(func.count(Article.id)).where(Article.topic == normalized_topic)) or 0
+        score_result = {
+            "topic": normalized_topic,
+            "article_count": int(n_art),
+            "scored_count": int(n_art),
+        }
     if score_result["article_count"] == 0:
         return {"success": True, "data": {"topic": normalized_topic, "outlets": []}, "error": None}
 
+    selected = compute_selected_outlets_from_db(normalized_topic, db)
+    framing = _load_framing_map(normalized_topic, db)
     return {
         "success": True,
-        "data": _build_outlet_scores(normalized_topic, db),
+        "data": _build_outlet_scores(normalized_topic, db, selected, framing),
         "error": None,
     }
 
@@ -402,22 +430,40 @@ async def analyze_topic(
     if not normalized_topic:
         raise HTTPException(status_code=400, detail="Topic must not be empty.")
 
-    fetch_meta: dict = {"cached": True, "count": 0, "saved_urls": []}
+    fetch_meta: dict = {"cached": True, "count": 0, "saved_urls": [], "selected_outlets": []}
     try:
         # Always run through fetcher so its 24-hour cache policy decides freshness.
         fetch_meta = await fetch_and_store_articles(normalized_topic, db)
     except NewsFetcherError as exc:
-        fetch_meta = {"cached": True, "count": 0, "saved_urls": [], "warning": str(exc)}
+        fetch_meta = {
+            "cached": True,
+            "count": 0,
+            "saved_urls": [],
+            "selected_outlets": [],
+            "warning": str(exc),
+        }
 
-    score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
+    selected: list[str] = list(fetch_meta.get("selected_outlets") or [])
+    if not selected:
+        selected = compute_selected_outlets_from_db(normalized_topic, db)
+
     if _topic_has_unscored_articles(normalized_topic, db):
         score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
-    score_data = _build_outlet_scores(normalized_topic, db)
+    else:
+        n_art = db.scalar(select(func.count(Article.id)).where(Article.topic == normalized_topic)) or 0
+        score_result = {
+            "topic": normalized_topic,
+            "article_count": int(n_art),
+            "scored_count": int(n_art),
+        }
 
-    llm_result = LLMAnalyzer().generate_missing_angle(normalized_topic, db)
+    framing_map = _load_framing_map(normalized_topic, db)
+    score_data = _build_outlet_scores(normalized_topic, db, selected, framing_map)
+
+    llm_result = LLMAnalyzer().generate_missing_angle(normalized_topic, db, selected)
     llm_data = llm_result.get("data", {})
-    headlines = _build_headline_map(normalized_topic, db)
-    timeline = _build_bias_timeline(normalized_topic, db, days=7)
+    headlines = _build_headline_map(normalized_topic, db, selected)
+    timeline = _build_bias_timeline(normalized_topic, db, selected, days=7)
 
     outlet_missing_angles = llm_data.get("outlet_missing_angles", {})
     outlets_with_missing_angle = []
@@ -428,7 +474,8 @@ async def analyze_topic(
         merged_outlet["headline"] = headlines.get(source)
         outlets_with_missing_angle.append(merged_outlet)
 
-    bias_distribution = bias_distribution_from_outlets(outlets_with_missing_angle)
+    bias_distribution = bias_distribution_from_outlets(score_data["outlets"])
+    most_left_outlet, most_right_outlet = extrem_bias_outlets(score_data["outlets"])
 
     reasoning = (
         f"Confidence: {llm_data.get('confidence') or 'unknown'}. "
@@ -459,6 +506,9 @@ async def analyze_topic(
             "outlet_count": score_data["outlet_count"],
             "outlets": outlets_with_missing_angle,
             "bias_distribution": bias_distribution,
+            "most_left_outlet": most_left_outlet,
+            "most_right_outlet": most_right_outlet,
+            "selected_outlets": selected,
             "timeline": timeline,
         },
         "error": None,
@@ -473,11 +523,6 @@ def get_outlet_profile(
     normalized = outlet.strip()
     if not normalized:
         raise HTTPException(status_code=400, detail="Outlet name must not be empty.")
-    if normalized not in ALLOWED_OUTLETS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown outlet. Allowed: {', '.join(ALLOWED_OUTLETS)}",
-        )
     return {
         "success": True,
         "data": _outlet_historical_profile(normalized, db),
@@ -494,12 +539,13 @@ def get_topic_trend(
     normalized = topic.strip()
     if not normalized:
         raise HTTPException(status_code=400, detail="Topic must not be empty.")
+    outlets_for_topic = compute_selected_outlets_from_db(normalized, db)
     return {
         "success": True,
         "data": {
             "topic": normalized,
             "days": days,
-            "series": _topic_volume_trend(normalized, db, days),
+            "series": _topic_volume_trend(normalized, db, days, outlets_for_topic),
         },
         "error": None,
     }

@@ -36,15 +36,28 @@ def bias_spectrum_bucket(label: str | None) -> str:
     return "center"
 
 
+FIXED_OUTLET_DENOMINATOR = 5
+
+
 def bias_distribution_from_outlets(outlets: list[dict]) -> dict:
-    """Count one spectrum bucket per outlet that has at least one scored article."""
+    """Count spectrum buckets per outlet; percentages use a fixed denominator of 5."""
+    return bias_distribution_fixed_denominator(outlets, FIXED_OUTLET_DENOMINATOR)
+
+
+def bias_distribution_fixed_denominator(outlets: list[dict], denominator: int) -> dict:
+    """
+    Count left/center/right from each outlet's dominant bias label (mapped to spectrum).
+    left_pct = (left_count / denominator) * 100, same for center and right.
+    """
     left = center = right = 0
+    active = 0
     for o in outlets:
         if not isinstance(o, dict):
             continue
         ac = o.get("article_count") or 0
         if ac <= 0:
             continue
+        active += 1
         bucket = bias_spectrum_bucket(o.get("dominant_bias_label"))
         if bucket == "left":
             left += 1
@@ -52,27 +65,41 @@ def bias_distribution_from_outlets(outlets: list[dict]) -> dict:
             right += 1
         else:
             center += 1
-    total = left + center + right
-    if total <= 0:
-        return {
-            "left_pct": 0,
-            "center_pct": 0,
-            "right_pct": 0,
-            "left_count": 0,
-            "center_count": 0,
-            "right_count": 0,
-            "outlet_total": 0,
-        }
-
-    def pct(n: int) -> int:
-        return int(round(100 * n / total))
-
+    den = max(1, int(denominator))
     return {
-        "left_pct": pct(left),
-        "center_pct": pct(center),
-        "right_pct": pct(right),
+        "left_pct": int(round(100 * left / den)),
+        "center_pct": int(round(100 * center / den)),
+        "right_pct": int(round(100 * right / den)),
         "left_count": left,
         "center_count": center,
         "right_count": right,
-        "outlet_total": total,
+        "outlet_total": active,
+        "denominator": den,
     }
+
+
+def extrem_bias_outlets(outlets: list[dict]) -> tuple[str | None, str | None]:
+    """Most left = lowest avg bias score; most right = highest."""
+    scored: list[dict] = []
+    for o in outlets:
+        if not isinstance(o, dict):
+            continue
+        if (o.get("article_count") or 0) <= 0:
+            continue
+        abs_score = o.get("avg_bias_score")
+        if abs_score is None:
+            continue
+        try:
+            float(abs_score)
+        except (TypeError, ValueError):
+            continue
+        scored.append(o)
+    if not scored:
+        return None, None
+    lo = min(scored, key=lambda x: float(x["avg_bias_score"]))
+    hi = max(scored, key=lambda x: float(x["avg_bias_score"]))
+    src_lo = lo.get("source")
+    src_hi = hi.get("source")
+    lo_name = str(src_lo) if src_lo is not None else None
+    hi_name = str(src_hi) if src_hi is not None else None
+    return lo_name, hi_name

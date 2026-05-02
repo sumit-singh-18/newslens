@@ -24,4 +24,7 @@ def test_bias_distribution_counts_outlets() -> None:
     assert d["right_count"] == 1
     assert d["center_count"] == 1
     assert d["outlet_total"] == 3
-    assert d["left_pct"] + d["center_pct"] + d["right_pct"] in (99, 100, 101)
+    assert d["denominator"] == 5
+    assert d["left_pct"] == 20
+    assert d["center_pct"] == 20
+    assert d["right_pct"] == 20

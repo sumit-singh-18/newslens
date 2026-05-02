@@ -143,6 +143,7 @@ function normalizeOutlet(o) {
       dominant_sentiment_label: null,
       dominant_bias_label: null,
       missing_angle: null,
+      framing_summary: null,
       headline: null,
     };
   }
@@ -173,6 +174,12 @@ function normalizeOutlet(o) {
           ? o.missing_angle
           : String(o.missing_angle),
     headline: o.headline == null ? null : String(o.headline),
+    framing_summary:
+      o.framing_summary == null || o.framing_summary === ""
+        ? null
+        : typeof o.framing_summary === "string"
+          ? o.framing_summary
+          : String(o.framing_summary),
   };
 }
 
@@ -234,6 +241,9 @@ function normalizeAnalyzePayload(raw) {
     fetch: d.fetch && typeof d.fetch === "object" ? d.fetch : {},
     scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
     bias_distribution: normalizeBiasDistribution(d.bias_distribution),
+    most_left_outlet: d.most_left_outlet == null ? null : String(d.most_left_outlet),
+    most_right_outlet: d.most_right_outlet == null ? null : String(d.most_right_outlet),
+    selected_outlets: Array.isArray(d.selected_outlets) ? d.selected_outlets.map(String) : [],
   };
 }
 
@@ -356,7 +366,8 @@ async function fetchTopicTrend(topic, days = 7) {
   return payload.data;
 }
 
-function computeBiasDistribution(outlets, apiDist) {
+/** Bias mix percentages come from the API only (/analyze bias_distribution). */
+function computeBiasDistribution(apiDist) {
   const fromApi = normalizeBiasDistribution(apiDist);
   if (fromApi) {
     const lp = fromApi.left_pct;
@@ -369,27 +380,11 @@ function computeBiasDistribution(outlets, apiDist) {
       text: `${lp}% left, ${cp}% center, ${rp}% right`,
     };
   }
-  const list = Array.isArray(outlets) ? outlets : [];
-  const active = list.filter((o) => (o.article_count || 0) > 0);
-  if (!active.length) {
-    return { text: "No outlets with articles for this topic yet.", left: 0, center: 0, right: 0 };
-  }
-  let left = 0;
-  let center = 0;
-  let right = 0;
-  for (const o of active) {
-    const bucket = biasSpectrumBucket(o.dominant_bias_label);
-    if (bucket === "left") left += 1;
-    else if (bucket === "right") right += 1;
-    else center += 1;
-  }
-  const t = active.length;
-  const pct = (n) => Math.round((n / t) * 100);
   return {
-    left: pct(left),
-    center: pct(center),
-    right: pct(right),
-    text: `${pct(left)}% left, ${pct(center)}% center, ${pct(right)}% right`,
+    left: 0,
+    center: 0,
+    right: 0,
+    text: "Bias mix unavailable.",
   };
 }
 
@@ -544,7 +539,11 @@ function OutletCard({ outlet, compareSelected, onCompareClick }) {
         </button>
       </div>
       <p className={biasBadgeClass(outlet.dominant_bias_label)}>{outlet.dominant_bias_label || "No bias label"}</p>
-      <p className="body">{outlet.missing_angle || "No framing summary available yet for this outlet."}</p>
+      <p className="body">
+        {outlet.framing_summary ||
+          outlet.missing_angle ||
+          "No framing summary available yet for this outlet."}
+      </p>
       <div className="metric-row">
         <span>Sentiment score</span>
         <strong>
@@ -845,12 +844,27 @@ function Header({ onStartAnalysis }) {
   );
 }
 
-function ResultsHeader({ topic, outlets, biasDistribution, missingAngle, shareCardRef, onShare, shareBusy, shareError }) {
-  const dist = useMemo(
-    () => computeBiasDistribution(outlets, biasDistribution),
-    [outlets, biasDistribution]
-  );
-  const ex = useMemo(() => extremOutlets(outlets), [outlets]);
+function ResultsHeader({
+  topic,
+  outlets,
+  biasDistribution,
+  spectrumExtremes,
+  missingAngle,
+  shareCardRef,
+  onShare,
+  shareBusy,
+  shareError,
+}) {
+  const dist = useMemo(() => computeBiasDistribution(biasDistribution), [biasDistribution]);
+  const ex = useMemo(() => {
+    const fb = extremOutlets(outlets);
+    const ml = spectrumExtremes?.most_left_outlet;
+    const mr = spectrumExtremes?.most_right_outlet;
+    return {
+      left: ml != null && String(ml).trim() !== "" ? ml : fb.left || "—",
+      right: mr != null && String(mr).trim() !== "" ? mr : fb.right || "—",
+    };
+  }, [spectrumExtremes, outlets]);
   const teaser = useMemo(() => {
     const v = missingAngle?.value;
     if (!v || typeof v !== "string") return "Perspective gaps may appear as more outlets publish.";
@@ -909,6 +923,10 @@ function AnalysisResults({
         topic={data.topic || ""}
         outlets={outlets}
         biasDistribution={data.bias_distribution}
+        spectrumExtremes={{
+          most_left_outlet: data.most_left_outlet,
+          most_right_outlet: data.most_right_outlet,
+        }}
         missingAngle={data.missing_angle}
         shareCardRef={shareCardRef}
         onShare={onShare}

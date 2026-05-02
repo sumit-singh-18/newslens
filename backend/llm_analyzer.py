@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import Article, TopicAnalysis
-from .news_fetcher import ALLOWED_OUTLETS
+from .news_fetcher import compute_selected_outlets_from_db
 
 logger = logging.getLogger(__name__)
 MIN_OUTLET_SUMMARIES = 3
@@ -47,10 +47,12 @@ class LLMAnalyzer:
             return text.strip()
         return " ".join(words[:150]).strip()
 
-    def _select_outlet_article_summaries(self, topic: str, db: Session) -> list[dict[str, str]]:
-        """One summary per allowed outlet: latest article title + body (trimmed to ~150 words)."""
+    def _select_outlet_article_summaries(
+        self, topic: str, db: Session, outlet_sources: list[str]
+    ) -> list[dict[str, str]]:
+        """One summary per selected outlet: latest article title + body (trimmed to ~150 words)."""
         summaries: list[dict[str, str]] = []
-        for source in ALLOWED_OUTLETS:
+        for source in outlet_sources:
             row = db.execute(
                 select(Article.title, Article.content)
                 .where(Article.topic == topic, Article.source == source)
@@ -93,12 +95,14 @@ class LLMAnalyzer:
             .order_by(TopicAnalysis.created_at.desc())
         )
 
-    def _build_user_prompt(self, topic: str, outlet_summaries: list[dict[str, str]]) -> str:
+    def _build_user_prompt(
+        self, topic: str, outlet_summaries: list[dict[str, str]], outlet_sources: list[str]
+    ) -> str:
         schema = {
             "topic": topic,
             "missing_angle": "string",
             "confidence": "low|medium|high",
-            "outlet_missing_angles": {source: "string" for source in ALLOWED_OUTLETS},
+            "outlet_missing_angles": {source: "string" for source in outlet_sources},
         }
         summary_lines = [
             f"- {item['source']}: {item['summary']}" for item in outlet_summaries
@@ -112,13 +116,21 @@ class LLMAnalyzer:
             f"{json.dumps(schema)}"
         )
 
-    def _normalize_outlet_missing_angles(self, parsed: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _normalize_outlet_missing_angles(
+        parsed: dict[str, Any], outlet_sources: list[str]
+    ) -> dict[str, Any]:
         outlet_missing = parsed.get("outlet_missing_angles", {})
         if not isinstance(outlet_missing, dict):
             outlet_missing = {}
-        return {source: outlet_missing.get(source) for source in ALLOWED_OUTLETS}
+        return {source: outlet_missing.get(source) for source in outlet_sources}
 
-    def generate_missing_angle(self, topic: str, db: Session) -> dict[str, Any]:
+    def generate_missing_angle(
+        self,
+        topic: str,
+        db: Session,
+        outlet_sources: list[str] | None = None,
+    ) -> dict[str, Any]:
         normalized_topic = topic.strip()
         if not normalized_topic:
             return {
@@ -127,13 +139,17 @@ class LLMAnalyzer:
                     "topic": "",
                     "missing_angle": None,
                     "confidence": None,
-                    "outlet_missing_angles": {source: None for source in ALLOWED_OUTLETS},
+                    "outlet_missing_angles": {},
                     "from_cache": False,
                     "error": True,
                     "error_message": "Topic must not be empty.",
                 },
                 "error": "Topic must not be empty.",
             }
+
+        outlet_sources = list(outlet_sources or [])
+        if not outlet_sources:
+            outlet_sources = compute_selected_outlets_from_db(normalized_topic, db)
 
         cached = self._load_cached_topic_analysis(normalized_topic, db)
         if cached:
@@ -149,7 +165,9 @@ class LLMAnalyzer:
                     "topic": normalized_topic,
                     "missing_angle": cached.missing_angle,
                     "confidence": parsed_summary.get("confidence"),
-                    "outlet_missing_angles": self._normalize_outlet_missing_angles(parsed_summary),
+                    "outlet_missing_angles": self._normalize_outlet_missing_angles(
+                        parsed_summary, outlet_sources
+                    ),
                     "from_cache": True,
                     "error": False,
                     "error_message": None,
@@ -164,7 +182,7 @@ class LLMAnalyzer:
                     "topic": normalized_topic,
                     "missing_angle": None,
                     "confidence": None,
-                    "outlet_missing_angles": {source: None for source in ALLOWED_OUTLETS},
+                    "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
                     "error": True,
                     "error_message": "ANTHROPIC_API_KEY is not configured.",
@@ -172,7 +190,9 @@ class LLMAnalyzer:
                 "error": "ANTHROPIC_API_KEY is not configured.",
             }
 
-        outlet_summaries = self._select_outlet_article_summaries(normalized_topic, db)
+        outlet_summaries = self._select_outlet_article_summaries(
+            normalized_topic, db, outlet_sources
+        )
         logger.info(
             "Missing angle Claude input: topic=%r outlet_summary_count=%s sources=%s",
             normalized_topic,
@@ -186,7 +206,7 @@ class LLMAnalyzer:
                     "topic": normalized_topic,
                     "missing_angle": None,
                     "confidence": None,
-                    "outlet_missing_angles": {source: None for source in ALLOWED_OUTLETS},
+                    "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
                     "error": False,
                     "error_message": None,
@@ -200,7 +220,7 @@ class LLMAnalyzer:
                     "topic": normalized_topic,
                     "missing_angle": None,
                     "confidence": None,
-                    "outlet_missing_angles": {source: None for source in ALLOWED_OUTLETS},
+                    "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
                     "error": True,
                     "error_message": (
@@ -224,7 +244,9 @@ class LLMAnalyzer:
                 messages=[
                     {
                         "role": "user",
-                        "content": self._build_user_prompt(normalized_topic, outlet_summaries),
+                        "content": self._build_user_prompt(
+                            normalized_topic, outlet_summaries, outlet_sources
+                        ),
                     }
                 ],
             )
@@ -232,7 +254,7 @@ class LLMAnalyzer:
             parsed = self._safe_parse_json(content_text)
             missing_angle = parsed.get("missing_angle")
             confidence = parsed.get("confidence")
-            outlet_missing_angles = self._normalize_outlet_missing_angles(parsed)
+            outlet_missing_angles = self._normalize_outlet_missing_angles(parsed, outlet_sources)
 
             db.add(
                 TopicAnalysis(
@@ -272,7 +294,7 @@ class LLMAnalyzer:
                     "topic": normalized_topic,
                     "missing_angle": None,
                     "confidence": None,
-                    "outlet_missing_angles": {source: None for source in ALLOWED_OUTLETS},
+                    "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
                     "error": True,
                     "error_message": str(exc),
