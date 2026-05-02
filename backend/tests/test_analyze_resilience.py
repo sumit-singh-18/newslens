@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -60,22 +61,15 @@ def test_db_session():
         db.close()
 
 
-def test_llm_analyzer_returns_fallback_on_claude_failure(test_db_session: Session, monkeypatch):
+def test_llm_analyzer_returns_fallback_on_gemini_failure(test_db_session: Session, monkeypatch):
     topic = "climate change"
     _seed_articles_with_scores(test_db_session, topic)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     analyzer = LLMAnalyzer()
-
-    class _FailingMessages:
-        @staticmethod
-        def create(**kwargs):
-            raise RuntimeError("boom")
-
-    class _FailingClient:
-        messages = _FailingMessages()
-
-    analyzer.client = _FailingClient()
+    mock_model = MagicMock()
+    mock_model.generate_content.side_effect = RuntimeError("boom")
+    analyzer._model = mock_model
     result = analyzer.generate_missing_angle(topic, test_db_session)
 
     assert result["success"] is True

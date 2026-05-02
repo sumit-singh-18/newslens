@@ -7,7 +7,7 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
-from anthropic import Anthropic
+import google.generativeai as genai
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,15 +30,24 @@ Rules:
 5. Keep each outlet note short and practical.
 """
 
-LLM_MODEL = "claude-sonnet-4-6"
+# Default Flash model (override with GEMINI_MODEL). `gemini-1.5-flash` is often unavailable
+# on current API versions — use `genai.list_models()` to pick a supported id.
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
 
 class LLMAnalyzer:
-    """Claude-powered missing-angle analysis with cache and fail-safe fallback."""
+    """Gemini-powered missing-angle analysis with cache and fail-safe fallback."""
 
     def __init__(self) -> None:
-        self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        self.client = Anthropic(api_key=self.api_key) if self.api_key else None
+        self.api_key = os.getenv("GEMINI_API_KEY", "")
+        self._model: Any = None
+        if self.api_key and "your_gemini_api_key_here" not in self.api_key:
+            genai.configure(api_key=self.api_key)
+            model_name = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+            self._model = genai.GenerativeModel(
+                model_name,
+                system_instruction=MISSING_ANGLE_SYSTEM_PROMPT,
+            )
 
     @staticmethod
     def _summarize_to_150_words(text: str) -> str:
@@ -71,17 +80,30 @@ class LLMAnalyzer:
         return summaries
 
     @staticmethod
-    def _extract_text_content(response: Any) -> str:
-        parts: list[str] = []
-        for block in getattr(response, "content", []) or []:
-            text = getattr(block, "text", None)
+    def _extract_gemini_text(response: Any) -> str:
+        try:
+            text = getattr(response, "text", None)
             if text:
-                parts.append(text)
-        return "\n".join(parts).strip()
+                return str(text).strip()
+        except (ValueError, AttributeError):
+            pass
+        return ""
 
     @staticmethod
-    def _safe_parse_json(payload: str) -> dict[str, Any]:
-        return json.loads(payload)
+    def _normalize_json_payload(raw: str) -> str:
+        t = raw.strip()
+        if t.startswith("```"):
+            lines = t.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            while lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            t = "\n".join(lines).strip()
+        return t
+
+    def _safe_parse_json(self, payload: str) -> dict[str, Any]:
+        normalized = self._normalize_json_payload(payload)
+        return json.loads(normalized)
 
     @staticmethod
     def _today_utc_date():
@@ -175,7 +197,7 @@ class LLMAnalyzer:
                 "error": None,
             }
 
-        if not self.api_key or "your_claude_api_key_here" in self.api_key:
+        if not self._model:
             return {
                 "success": False,
                 "data": {
@@ -185,16 +207,16 @@ class LLMAnalyzer:
                     "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
                     "error": True,
-                    "error_message": "ANTHROPIC_API_KEY is not configured.",
+                    "error_message": "GEMINI_API_KEY is not configured.",
                 },
-                "error": "ANTHROPIC_API_KEY is not configured.",
+                "error": "GEMINI_API_KEY is not configured.",
             }
 
         outlet_summaries = self._select_outlet_article_summaries(
             normalized_topic, db, outlet_sources
         )
         logger.info(
-            "Missing angle Claude input: topic=%r outlet_summary_count=%s sources=%s",
+            "Missing angle Gemini input: topic=%r outlet_summary_count=%s sources=%s",
             normalized_topic,
             len(outlet_summaries),
             [s["source"] for s in outlet_summaries],
@@ -232,25 +254,21 @@ class LLMAnalyzer:
 
         try:
             logger.info(
-                "Calling Claude for missing angle with %d outlet summaries (topic=%r)",
+                "Calling Gemini for missing angle with %d outlet summaries (topic=%r)",
                 len(outlet_summaries),
                 normalized_topic,
             )
-            response = self.client.messages.create(
-                model=LLM_MODEL,
-                system=MISSING_ANGLE_SYSTEM_PROMPT,
-                max_tokens=1000,
-                temperature=0.7,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": self._build_user_prompt(
-                            normalized_topic, outlet_summaries, outlet_sources
-                        ),
-                    }
-                ],
+            user_prompt = self._build_user_prompt(
+                normalized_topic, outlet_summaries, outlet_sources
             )
-            content_text = self._extract_text_content(response)
+            response = self._model.generate_content(
+                user_prompt,
+                generation_config=genai.GenerationConfig(
+                    max_output_tokens=1000,
+                    temperature=0.7,
+                ),
+            )
+            content_text = self._extract_gemini_text(response)
             parsed = self._safe_parse_json(content_text)
             missing_angle = parsed.get("missing_angle")
             confidence = parsed.get("confidence")

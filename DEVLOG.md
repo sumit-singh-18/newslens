@@ -342,3 +342,17 @@ This file tracks all major development progress, decisions, challenges, and solu
 ### Verification / build
 - **`PYTHONPATH=. python3 -m pytest backend/tests -q`**: pass. **`npm run build`** in **`frontend/`** refreshes **`bundle.js`**.
 - Example local check on **`us-iran war`** after a fresh fetch: **5** outlets, non-empty **`framing_summary`**, mixed **`bias_distribution`** (e.g. Bloomberg **Left**, Al Jazeera **Right**, others **Center** from blended axis).
+
+## [2026-05-01] - Missing Angle: Claude → Google Gemini
+
+### What changed
+- **`backend/llm_analyzer.py`**: Replaced Anthropic **`claude-sonnet-4-6`** with **`google-generativeai`** and model **`gemini-2.0-flash`** (requested **`gemini-1.5-flash`** is not returned by **`list_models`** for this API; Flash-tier equivalent). **`MISSING_ANGLE_SYSTEM_PROMPT`**, JSON schema, **`topic_analysis` same-day cache**, and exception fallback behavior are unchanged.
+- **`backend/requirements.txt`**: **`anthropic`** → **`google-generativeai==0.8.6`**.
+- **Env**: **`GEMINI_API_KEY`** only; **`ANTHROPIC_API_KEY`** removed from **`.env`** and **`.env.example`**.
+- **Cursor rules**: **`004-claude-llm.mdc`** renamed to **`004-llm-analyzer.mdc`** ( **`003-database.mdc`** keeps the **`003-`** slot ). **`006-env-config.mdc`** lists **`GEMINI_API_KEY`** instead of Anthropic.
+
+### Reason
+Anthropic API credits exhausted; Gemini free tier covers Missing Angle generation.
+
+### Verification
+- Restart backend; search **`trade war`**; Missing Angle should call Gemini when **`GEMINI_API_KEY`** is set and ≥3 outlet summaries exist. Local smoke test hit **`429`** quota on the dev key (confirms the **`gemini-2.0-flash`** path end-to-end). Optional **`GEMINI_MODEL`** env overrides the default Flash model id.
