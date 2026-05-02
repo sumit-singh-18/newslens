@@ -60354,6 +60354,7 @@ function normalizeOutlet(o) {
       dominant_sentiment_label: null,
       dominant_bias_label: null,
       missing_angle: null,
+      framing_summary: null,
       headline: null
     };
   }
@@ -60369,7 +60370,8 @@ function normalizeOutlet(o) {
     dominant_sentiment_label: o.dominant_sentiment_label == null ? null : String(o.dominant_sentiment_label),
     dominant_bias_label: o.dominant_bias_label == null ? null : String(o.dominant_bias_label),
     missing_angle: o.missing_angle == null || o.missing_angle === "" ? null : typeof o.missing_angle === "string" ? o.missing_angle : String(o.missing_angle),
-    headline: o.headline == null ? null : String(o.headline)
+    headline: o.headline == null ? null : String(o.headline),
+    framing_summary: o.framing_summary == null || o.framing_summary === "" ? null : typeof o.framing_summary === "string" ? o.framing_summary : String(o.framing_summary)
   };
 }
 function normalizeMissingAngleBlock(ma) {
@@ -60401,6 +60403,14 @@ function normalizeTimeline(rows) {
     return copy3;
   });
 }
+function normalizeBiasDistribution(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const lp = Number(raw.left_pct);
+  const cp = Number(raw.center_pct);
+  const rp = Number(raw.right_pct);
+  if (![lp, cp, rp].every((n) => Number.isFinite(n))) return null;
+  return { left_pct: lp, center_pct: cp, right_pct: rp };
+}
 function normalizeAnalyzePayload(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
@@ -60410,7 +60420,11 @@ function normalizeAnalyzePayload(raw) {
     timeline: normalizeTimeline(d.timeline),
     missing_angle: normalizeMissingAngleBlock(d.missing_angle),
     fetch: d.fetch && typeof d.fetch === "object" ? d.fetch : {},
-    scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {}
+    scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
+    bias_distribution: normalizeBiasDistribution(d.bias_distribution),
+    most_left_outlet: d.most_left_outlet == null ? null : String(d.most_left_outlet),
+    most_right_outlet: d.most_right_outlet == null ? null : String(d.most_right_outlet),
+    selected_outlets: Array.isArray(d.selected_outlets) ? d.selected_outlets.map(String) : []
   };
 }
 function sentimentBucket(labels, keys2) {
@@ -60430,10 +60444,19 @@ var OUTLET_COLORS = {
   "BBC News": "#0EA5E9",
   "Al Jazeera English": "#8B5CF6"
 };
+function biasSpectrumBucket(label) {
+  const s2 = String(label ?? "").trim().toLowerCase();
+  if (!s2) return "center";
+  const leftHints = ["left", "liberal", "progressive", "socialist", "democrat"];
+  const rightHints = ["right", "conservative", "republican", "nationalist", "populist"];
+  if (leftHints.some((h) => s2.includes(h))) return "left";
+  if (rightHints.some((h) => s2.includes(h))) return "right";
+  return "center";
+}
 var biasBadgeClass = (label) => {
-  const normalized = String(label ?? "").toLowerCase();
-  if (normalized.includes("left")) return "badge blue-bg";
-  if (normalized.includes("right")) return "badge red-bg";
+  const bucket = biasSpectrumBucket(label);
+  if (bucket === "left") return "badge blue-bg";
+  if (bucket === "right") return "badge red-bg";
   return "badge gray-bg";
 };
 var readHistory = () => {
@@ -60508,28 +60531,24 @@ async function fetchTopicTrend(topic, days = 7) {
   }
   return payload.data;
 }
-function computeBiasDistribution(outlets) {
-  const list = Array.isArray(outlets) ? outlets : [];
-  const active = list.filter((o) => (o.article_count || 0) > 0);
-  if (!active.length) {
-    return { text: "No outlets with articles for this topic yet.", left: 0, center: 0, right: 0 };
+function computeBiasDistribution(apiDist) {
+  const fromApi = normalizeBiasDistribution(apiDist);
+  if (fromApi) {
+    const lp = fromApi.left_pct;
+    const cp = fromApi.center_pct;
+    const rp = fromApi.right_pct;
+    return {
+      left: lp,
+      center: cp,
+      right: rp,
+      text: `${lp}% left, ${cp}% center, ${rp}% right`
+    };
   }
-  let left = 0;
-  let center = 0;
-  let right = 0;
-  for (const o of active) {
-    const label = (o.dominant_bias_label || "").toLowerCase();
-    if (label.includes("left")) left += 1;
-    else if (label.includes("right")) right += 1;
-    else center += 1;
-  }
-  const t = active.length;
-  const pct = (n) => Math.round(n / t * 100);
   return {
-    left: pct(left),
-    center: pct(center),
-    right: pct(right),
-    text: `${pct(left)}% left, ${pct(center)}% center, ${pct(right)}% right`
+    left: 0,
+    center: 0,
+    right: 0,
+    text: "Bias mix unavailable."
   };
 }
 function extremOutlets(outlets) {
@@ -60582,7 +60601,7 @@ function SourceProfileSection({ outletName }) {
 }
 function OutletCard({ outlet, compareSelected, onCompareClick }) {
   const selectedClass = compareSelected ? "outlet-card-selected" : "";
-  return /* @__PURE__ */ import_react36.default.createElement("article", { className: `card outlet-card ${selectedClass}` }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")), /* @__PURE__ */ import_react36.default.createElement("p", { className: biasBadgeClass(outlet.dominant_bias_label) }, outlet.dominant_bias_label || "No bias label"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "body" }, outlet.missing_angle || "No framing summary available yet for this outlet."), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof outlet.avg_sentiment_score === "number" ? outlet.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity (0-10)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(outlet.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement(SourceProfileSection, { outletName: outlet.source }));
+  return /* @__PURE__ */ import_react36.default.createElement("article", { className: `card outlet-card ${selectedClass}` }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")), /* @__PURE__ */ import_react36.default.createElement("p", { className: biasBadgeClass(outlet.dominant_bias_label) }, outlet.dominant_bias_label || "No bias label"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "body" }, outlet.framing_summary || outlet.missing_angle || "No framing summary available yet for this outlet."), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof outlet.avg_sentiment_score === "number" ? outlet.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity (0-10)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(outlet.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement(SourceProfileSection, { outletName: outlet.source }));
 }
 function OutletGrid({ outlets, compareSelection, onCompareClick }) {
   const selectedSet = new Set(compareSelection);
@@ -60667,9 +60686,27 @@ function MissingAngleCard({ missingAngle }) {
 function Header({ onStartAnalysis }) {
   return /* @__PURE__ */ import_react36.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand-lockup" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand" }, "NewsLens"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "brand-tag" }, "Truth in headlines. Bias in framing.")), /* @__PURE__ */ import_react36.default.createElement("nav", null, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "active" }, "Dashboard"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#topics" }, "Topics"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#outlets" }, "Outlets"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#methodology" }, "Methodology")), /* @__PURE__ */ import_react36.default.createElement("button", { className: "cta", onClick: onStartAnalysis }, "Start Analysis"));
 }
-function ResultsHeader({ topic, outlets, missingAngle, shareCardRef, onShare, shareBusy, shareError }) {
-  const dist = (0, import_react36.useMemo)(() => computeBiasDistribution(outlets), [outlets]);
-  const ex = (0, import_react36.useMemo)(() => extremOutlets(outlets), [outlets]);
+function ResultsHeader({
+  topic,
+  outlets,
+  biasDistribution,
+  spectrumExtremes,
+  missingAngle,
+  shareCardRef,
+  onShare,
+  shareBusy,
+  shareError
+}) {
+  const dist = (0, import_react36.useMemo)(() => computeBiasDistribution(biasDistribution), [biasDistribution]);
+  const ex = (0, import_react36.useMemo)(() => {
+    const fb = extremOutlets(outlets);
+    const ml = spectrumExtremes?.most_left_outlet;
+    const mr = spectrumExtremes?.most_right_outlet;
+    return {
+      left: ml != null && String(ml).trim() !== "" ? ml : fb.left || "\u2014",
+      right: mr != null && String(mr).trim() !== "" ? mr : fb.right || "\u2014"
+    };
+  }, [spectrumExtremes, outlets]);
   const teaser = (0, import_react36.useMemo)(() => {
     const v = missingAngle?.value;
     if (!v || typeof v !== "string") return "Perspective gaps may appear as more outlets publish.";
@@ -60705,6 +60742,11 @@ function AnalysisResults({
     {
       topic: data.topic || "",
       outlets,
+      biasDistribution: data.bias_distribution,
+      spectrumExtremes: {
+        most_left_outlet: data.most_left_outlet,
+        most_right_outlet: data.most_right_outlet
+      },
       missingAngle: data.missing_angle,
       shareCardRef,
       onShare,
