@@ -26,18 +26,58 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 logger = logging.getLogger(__name__)
 
 NEWSAPI_EVERYTHING = "https://newsapi.org/v2/everything"
-NEWSAPI_TOP_HEADLINES = "https://newsapi.org/v2/top-headlines"
 
-# Broader pool (15+). Slugs must match NewsAPI publisher IDs (see https://newsapi.org/sources).
-NEWSAPI_BROAD_SOURCES = (
-    "bbc-news,reuters,cnn,fox-news,al-jazeera-english,"
-    "the-guardian-uk,nbc-news,abc-news,associated-press,bloomberg,"
-    "the-washington-post,msnbc,politico,the-wall-street-journal,npr"
+# Credibility-ranked allowlist — NewsAPI publisher IDs only (see https://newsapi.org/sources).
+# Tier 1: wires · Tier 2: broadcast · Tier 3: major papers · Tier 4: cable/finance.
+CREDIBLE_SOURCES_RANKED: tuple[str, ...] = (
+    "associated-press",
+    "reuters",
+    "bbc-news",
+    "nbc-news",
+    "abc-news",
+    "cbs-news",
+    "npr",
+    "the-washington-post",
+    "the-wall-street-journal",
+    "the-guardian-uk",
+    "the-new-york-times",
+    "cnn",
+    "fox-news",
+    "msnbc",
+    "bloomberg",
 )
+
+SOURCE_DISPLAY_NAMES: dict[str, str] = {
+    "associated-press": "Associated Press",
+    "reuters": "Reuters",
+    "bbc-news": "BBC News",
+    "nbc-news": "NBC News",
+    "abc-news": "ABC News",
+    "cbs-news": "CBS News",
+    "npr": "NPR",
+    "the-washington-post": "Washington Post",
+    "the-wall-street-journal": "Wall Street Journal",
+    "the-guardian-uk": "The Guardian",
+    "the-new-york-times": "New York Times",
+    "cnn": "CNN",
+    "fox-news": "Fox News",
+    "msnbc": "MSNBC",
+    "bloomberg": "Bloomberg",
+}
+
+ALLOWED_SOURCE_IDS: frozenset[str] = frozenset(CREDIBLE_SOURCES_RANKED)
+ALLOWED_OUTLET_DISPLAY_NAMES: frozenset[str] = frozenset(SOURCE_DISPLAY_NAMES.values())
+OUTLET_DISPLAY_RANK: dict[str, int] = {
+    SOURCE_DISPLAY_NAMES[sid]: i for i, sid in enumerate(CREDIBLE_SOURCES_RANKED)
+}
+
+NEWSAPI_CREDIBLE_SOURCES_PARAM = ",".join(CREDIBLE_SOURCES_RANKED)
 
 TOP_OUTLET_SLOTS = 5
 MIN_ARTICLES_PER_SOURCE = 1
+MIN_CREDIBLE_OUTLETS = 3
 NEWSAPI_PAGE_SIZE = 100
+COVERAGE_SHORTFALL_MESSAGE = "Not enough credible coverage found for this topic yet"
 
 
 class NewsFetcherError(Exception):
@@ -75,7 +115,7 @@ def _log_source_article_counts(stage: str, by_source: dict[str, list[Any]]) -> N
 
 def _qualifying_source_names(by_source: dict[str, list[Any]], min_art: int) -> list[str]:
     eligible = [s for s, items in by_source.items() if len(items) >= min_art]
-    eligible.sort(key=lambda s: len(by_source[s]), reverse=True)
+    eligible.sort(key=lambda s: (-len(by_source[s]), OUTLET_DISPLAY_RANK.get(s, 999)))
     return eligible
 
 
@@ -83,10 +123,17 @@ def _ingest_articles_into_buckets(
     incoming_articles: list[dict[str, Any]],
     by_source: dict[str, list[dict[str, Any]]],
     seen_urls: set[str],
+    *,
+    allowed_source_ids: frozenset[str],
+    source_id_to_display: dict[str, str],
 ) -> int:
     added = 0
     for item in incoming_articles:
-        source_name = ((item.get("source") or {}).get("name") or "").strip()
+        src_obj = item.get("source") or {}
+        source_id = (src_obj.get("id") or "").strip()
+        if not source_id or source_id not in allowed_source_ids:
+            continue
+        source_name = source_id_to_display.get(source_id) or (src_obj.get("name") or "").strip()
         if not source_name:
             continue
         url = (item.get("url") or "").strip()
@@ -123,15 +170,25 @@ def _get_recent_cached_articles(topic: str, db: Session) -> list[Article]:
 
 
 def compute_selected_outlets_from_db(topic: str, db: Session) -> list[str]:
-    """Top sources by article count for this topic (>= min articles), max TOP_OUTLET_SLOTS."""
+    """Top approved sources by article count for this topic (>= min articles), max TOP_OUTLET_SLOTS."""
     rows = db.execute(
         select(Article.source, func.count(Article.id))
         .where(Article.topic == topic)
         .group_by(Article.source)
     ).all()
-    eligible = [(s, int(c)) for s, c in rows if c >= MIN_ARTICLES_PER_SOURCE]
-    eligible.sort(key=lambda x: -x[1])
+    eligible = [
+        (s, int(c))
+        for s, c in rows
+        if c >= MIN_ARTICLES_PER_SOURCE and s in ALLOWED_OUTLET_DISPLAY_NAMES
+    ]
+    eligible.sort(key=lambda x: (-x[1], OUTLET_DISPLAY_RANK.get(x[0], 999)))
     return [s for s, _ in eligible[:TOP_OUTLET_SLOTS]]
+
+
+def _invalidate_topic_articles(topic: str, db: Session) -> None:
+    db.execute(delete(TopicOutletFraming).where(TopicOutletFraming.topic == topic))
+    db.execute(delete(Article).where(Article.topic == topic))
+    db.commit()
 
 
 async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
@@ -142,12 +199,14 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
     cached_articles = _get_recent_cached_articles(topic, db)
     if cached_articles:
         selected = compute_selected_outlets_from_db(topic, db)
-        return {
-            "cached": True,
-            "count": len(cached_articles),
-            "saved_urls": [],
-            "selected_outlets": selected,
-        }
+        if selected:
+            return {
+                "cached": True,
+                "count": len(cached_articles),
+                "saved_urls": [],
+                "selected_outlets": selected,
+            }
+        _invalidate_topic_articles(topic, db)
 
     news_api_key = os.getenv("NEWSAPI_KEY")
     if not news_api_key or "your_newsapi_key_here" in news_api_key:
@@ -157,9 +216,9 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
     by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
     seen_urls: set[str] = set()
 
-    params_everything_pool = {
+    params_everything = {
         "q": topic,
-        "sources": NEWSAPI_BROAD_SOURCES,
+        "sources": NEWSAPI_CREDIBLE_SOURCES_PARAM,
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": NEWSAPI_PAGE_SIZE,
@@ -167,61 +226,33 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
 
     try:
         async with httpx.AsyncClient(timeout=40.0) as client:
-            r1 = await client.get(NEWSAPI_EVERYTHING, params=params_everything_pool, headers=headers)
+            r1 = await client.get(NEWSAPI_EVERYTHING, params=params_everything, headers=headers)
             r1.raise_for_status()
             payload1 = r1.json()
             if payload1.get("status") != "ok":
                 raise NewsFetcherError(f"NewsAPI returned error: {payload1.get('message', 'unknown error')}")
-            n1 = _ingest_articles_into_buckets(payload1.get("articles") or [], by_source, seen_urls)
-            _log_source_article_counts(f"everything(sources=pool) ingested={n1}", by_source)
-
-            if len(_qualifying_source_names(by_source, MIN_ARTICLES_PER_SOURCE)) < TOP_OUTLET_SLOTS:
-                params_th = {
-                    "country": "us",
-                    "q": topic,
-                    "pageSize": NEWSAPI_PAGE_SIZE,
-                }
-                try:
-                    r2 = await client.get(NEWSAPI_TOP_HEADLINES, params=params_th, headers=headers)
-                    r2.raise_for_status()
-                    payload2 = r2.json()
-                    if payload2.get("status") == "ok":
-                        n2 = _ingest_articles_into_buckets(payload2.get("articles") or [], by_source, seen_urls)
-                        _log_source_article_counts(f"top-headlines(country=us) ingested={n2}", by_source)
-                    else:
-                        logger.warning(
-                            "[NewsLens] top-headlines skipped: %s",
-                            payload2.get("message", "unknown"),
-                        )
-                except httpx.HTTPError as exc:
-                    logger.warning("[NewsLens] top-headlines request failed: %s", exc)
-
-            if len(_qualifying_source_names(by_source, MIN_ARTICLES_PER_SOURCE)) < TOP_OUTLET_SLOTS:
-                params_everything_open = {
-                    "q": topic,
-                    "language": "en",
-                    "sortBy": "publishedAt",
-                    "pageSize": NEWSAPI_PAGE_SIZE,
-                }
-                try:
-                    r3 = await client.get(NEWSAPI_EVERYTHING, params=params_everything_open, headers=headers)
-                    r3.raise_for_status()
-                    payload3 = r3.json()
-                    if payload3.get("status") == "ok":
-                        n3 = _ingest_articles_into_buckets(payload3.get("articles") or [], by_source, seen_urls)
-                        _log_source_article_counts(f"everything(open, no source filter) ingested={n3}", by_source)
-                    else:
-                        logger.warning(
-                            "[NewsLens] everything(open) skipped: %s",
-                            payload3.get("message", "unknown"),
-                        )
-                except httpx.HTTPError as exc:
-                    logger.warning("[NewsLens] everything(open) request failed: %s", exc)
+            n1 = _ingest_articles_into_buckets(
+                payload1.get("articles") or [],
+                by_source,
+                seen_urls,
+                allowed_source_ids=ALLOWED_SOURCE_IDS,
+                source_id_to_display=SOURCE_DISPLAY_NAMES,
+            )
+            _log_source_article_counts(f"everything(credible allowlist) ingested={n1}", by_source)
 
     except httpx.HTTPError as exc:
         raise NewsFetcherError(f"NewsAPI request failed: {exc}") from exc
 
     eligible_sources = _qualifying_source_names(by_source, MIN_ARTICLES_PER_SOURCE)
+    if len(eligible_sources) < MIN_CREDIBLE_OUTLETS:
+        return {
+            "cached": False,
+            "count": 0,
+            "saved_urls": [],
+            "selected_outlets": [],
+            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
+        }
+
     selected_sources = eligible_sources[:TOP_OUTLET_SLOTS]
 
     flat_raw: list[dict[str, Any]] = []
@@ -234,9 +265,9 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
             "count": 0,
             "saved_urls": [],
             "selected_outlets": [],
+            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
         }
 
-    # URLs are globally unique; another topic may already own the same story.
     urls_flat = [r["url"] for r in flat_raw]
     blocked_rows = db.execute(select(Article.url).where(Article.url.in_(urls_flat))).all()
     blocked = {str(r[0]) for r in blocked_rows if r[0]}
@@ -253,13 +284,25 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
             "count": 0,
             "saved_urls": [],
             "selected_outlets": [],
+            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
         }
 
-    # Re-pick top outlets by remaining article counts after URL conflicts.
     flat_by_src: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in flat_raw:
         flat_by_src[r["source"]].append(r)
-    reranked = sorted(flat_by_src.keys(), key=lambda s: len(flat_by_src[s]), reverse=True)
+    reranked = sorted(
+        flat_by_src.keys(),
+        key=lambda s: (-len(flat_by_src[s]), OUTLET_DISPLAY_RANK.get(s, 999)),
+    )
+    if len(reranked) < MIN_CREDIBLE_OUTLETS:
+        return {
+            "cached": False,
+            "count": 0,
+            "saved_urls": [],
+            "selected_outlets": [],
+            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
+        }
+
     selected_sources = reranked[:TOP_OUTLET_SLOTS]
     flat_raw = []
     for src in selected_sources:
