@@ -470,3 +470,15 @@ NewsAPI often returns morning roundups and multi-story newsletters that satisfie
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
 - **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.
 - Cleared **`topic_outlet_framing`** and **`topic_analysis`** after the change.
+
+## [2026-05-04] - Stronger digest filter + wipe article tables
+
+### What changed
+- **`backend/news_fetcher.py`**: Extended **`_DIGEST_TITLE_MARKERS`** with **`morning rundown`** (ordered before generic **`morning`**), **`fly-by`**, **`nears and`**, **`ceasefire deadline nears`**. Added **`_title_is_multi_clause_roundup`**: titles with **` and `** splitting into **≥3** non-empty clauses are rejected as multi-story bundles.
+- **Database**: **`DELETE`** from **`articles`**, **`article_scores`**, **`topic_outlet_framing`**, **`topic_analysis`** so only freshly fetched rows remain under the new rules.
+
+### Reason
+Stale newsletter rows lingered in **`articles`** after the first digest filter; NBC-style rundowns needed extra markers and a structural **`A and B and C`** headline rule.
+
+### Verification
+- Backend restarted after truncate (**`uvicorn`** on port **8000**).

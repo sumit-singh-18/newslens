@@ -357,6 +357,7 @@ _TITLE_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?")
 _DIGEST_TITLE_MARKERS: tuple[str, ...] = (
     "newsletter",
     "roundup",
+    "morning rundown",
     "morning",
     "digest",
     "weekly",
@@ -367,9 +368,22 @@ _DIGEST_TITLE_MARKERS: tuple[str, ...] = (
     "this week",
     "today's",
     "top stories",
+    "fly-by",
+    "nears and",
+    "ceasefire deadline nears",
 )
 
 _MAX_ARTICLE_BODY_CHARS = 8000
+
+
+def _title_is_multi_clause_roundup(title: str) -> bool:
+    """True when ' and ' joins 3+ segments (multi-story / digest-style headline)."""
+    if not title:
+        return False
+    if re.search(r"\s+and\s+", title, flags=re.IGNORECASE) is None:
+        return False
+    parts = [p.strip() for p in re.split(r"\s+and\s+", title.strip(), flags=re.IGNORECASE) if p.strip()]
+    return len(parts) >= 3
 
 
 def _topic_tokens_min_len4(topic: str) -> set[str]:
@@ -390,6 +404,8 @@ def _article_passes_topic_quality_filters(row: dict[str, Any], user_topic: str) 
     for marker in _DIGEST_TITLE_MARKERS:
         if marker in tl:
             return False
+    if _title_is_multi_clause_roundup(title):
+        return False
     overlap_needed = _topic_tokens_min_len4(user_topic)
     if overlap_needed:
         if not (_title_tokens(title) & overlap_needed):
