@@ -13,7 +13,15 @@ from google.api_core.exceptions import ResourceExhausted
 
 from backend import main
 from backend.database import Article, ArticleScore, Base
+from backend import llm_analyzer as llm_analyzer_module
 from backend.llm_analyzer import GEMINI_QUOTA_USER_MESSAGE, LLMAnalyzer
+
+
+@pytest.fixture(autouse=True)
+def reset_gemini_quota_retry_after():
+    llm_analyzer_module._GEMINI_RETRY_AFTER_TS = None
+    yield
+    llm_analyzer_module._GEMINI_RETRY_AFTER_TS = None
 
 
 def _seed_articles_with_scores(db: Session, topic: str) -> None:
@@ -201,3 +209,36 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
     assert payload["data"]["source_pool"] == ["GENERAL"]
 
     main.app.dependency_overrides.clear()
+
+
+def test_gemini_quota_cooldown_skips_api_then_retries_after_window(
+    test_db_session: Session, monkeypatch
+):
+    """Issue 3: no same-day cache during cooldown avoids hammering Gemini; after 65s window, retry."""
+    topic = "climate change"
+    _seed_articles_with_scores(test_db_session, topic)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    calls: list[int] = []
+
+    def _both_quota(self, model_name, user_prompt, temperature):
+        calls.append(1)
+        raise ResourceExhausted("quota")
+
+    monkeypatch.setattr(LLMAnalyzer, "_generate_with_gemini", _both_quota)
+    analyzer = LLMAnalyzer()
+
+    analyzer.generate_missing_angle(topic, test_db_session)
+    assert len(calls) == 2  # Pro + Flash
+
+    analyzer.generate_missing_angle(topic, test_db_session)
+    assert len(calls) == 2  # cooldown short-circuit
+
+    monkeypatch.setattr(
+        llm_analyzer_module.time,
+        "time",
+        lambda: (llm_analyzer_module._GEMINI_RETRY_AFTER_TS or 0) + 1.0,
+    )
+
+    analyzer.generate_missing_angle(topic, test_db_session)
+    assert len(calls) == 4

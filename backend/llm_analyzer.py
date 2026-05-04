@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import traceback
 from datetime import datetime, timezone
 from typing import Any
@@ -16,7 +17,11 @@ from .database import Article, TopicAnalysis, normalize_topic
 from .news_fetcher import compute_selected_outlets_from_db
 
 logger = logging.getLogger(__name__)
-MIN_OUTLET_SUMMARIES = 3
+MIN_OUTLET_SUMMARIES = 2
+
+# Wall-clock time (time.time) after which a same-day topic_analysis row may be ignored
+# so Gemini is tried again following API quota (429) exhaustion.
+_GEMINI_RETRY_AFTER_TS: float | None = None
 
 
 MISSING_ANGLE_SYSTEM_PROMPT = """You are a media analysis assistant for NewsLens.
@@ -42,6 +47,27 @@ GEMINI_FLASH_TEMPERATURE = 0.45
 GEMINI_QUOTA_USER_MESSAGE = (
     "Editorial analysis temporarily unavailable. Check back shortly."
 )
+
+def _retry_after_status_for_log() -> str:
+    if _GEMINI_RETRY_AFTER_TS is None:
+        return "retry_after=none"
+    now = time.time()
+    if now < _GEMINI_RETRY_AFTER_TS:
+        return (
+            f"retry_after=cooldown until={_GEMINI_RETRY_AFTER_TS:.3f} "
+            f"secs_remaining={_GEMINI_RETRY_AFTER_TS - now:.1f}"
+        )
+    return f"retry_after=elapsed (next_Gemini_ok) until={_GEMINI_RETRY_AFTER_TS:.3f}"
+
+
+def _set_gemini_quota_retry_after() -> None:
+    global _GEMINI_RETRY_AFTER_TS
+    _GEMINI_RETRY_AFTER_TS = time.time() + 65.0
+
+
+def _clear_gemini_retry_after() -> None:
+    global _GEMINI_RETRY_AFTER_TS
+    _GEMINI_RETRY_AFTER_TS = None
 
 
 class LLMAnalyzer:
@@ -128,6 +154,37 @@ class LLMAnalyzer:
             .order_by(TopicAnalysis.created_at.desc())
         )
 
+    def _response_from_topic_analysis_cache(
+        self, normalized_topic: str, cached: TopicAnalysis, outlet_sources: list[str]
+    ) -> dict[str, Any]:
+        parsed_summary: dict[str, Any] = {}
+        if cached.llm_summary:
+            try:
+                parsed_summary = json.loads(cached.llm_summary)
+            except json.JSONDecodeError:
+                parsed_summary = {}
+        logger.info(
+            "Missing angle: CACHE HIT same-day topic_analysis topic=%r %s",
+            normalized_topic,
+            _retry_after_status_for_log(),
+        )
+        return {
+            "success": True,
+            "data": {
+                "topic": normalized_topic,
+                "missing_angle": cached.missing_angle,
+                "analysis_status": "ok",
+                "confidence": parsed_summary.get("confidence"),
+                "outlet_missing_angles": self._normalize_outlet_missing_angles(
+                    parsed_summary, outlet_sources
+                ),
+                "from_cache": True,
+                "error": False,
+                "error_message": None,
+            },
+            "error": None,
+        }
+
     def _build_user_prompt(
         self, topic: str, outlet_summaries: list[dict[str, str]], outlet_sources: list[str]
     ) -> str:
@@ -205,7 +262,24 @@ class LLMAnalyzer:
             ),
         )
 
-    def _quota_limited_response(self, normalized_topic: str, outlet_sources: list[str]) -> dict[str, Any]:
+    def _quota_limited_response(
+        self,
+        normalized_topic: str,
+        outlet_sources: list[str],
+        *,
+        arm_retry_after: bool = True,
+    ) -> dict[str, Any]:
+        if arm_retry_after:
+            _set_gemini_quota_retry_after()
+            logger.warning(
+                "Gemini quota exhausted; retry_after set (+65s). %s",
+                _retry_after_status_for_log(),
+            )
+        else:
+            logger.info(
+                "Gemini quota still cooling down (no API call); %s",
+                _retry_after_status_for_log(),
+            )
         return {
             "success": True,
             "data": {
@@ -276,6 +350,7 @@ class LLMAnalyzer:
             )
         )
         db.commit()
+        _clear_gemini_retry_after()
 
         return {
             "success": True,
@@ -320,29 +395,38 @@ class LLMAnalyzer:
             outlet_sources = compute_selected_outlets_from_db(normalized_topic, db)
 
         cached = self._load_cached_topic_analysis(normalized_topic, db)
-        if cached:
-            parsed_summary: dict[str, Any] = {}
-            if cached.llm_summary:
-                try:
-                    parsed_summary = json.loads(cached.llm_summary)
-                except json.JSONDecodeError:
-                    parsed_summary = {}
-            return {
-                "success": True,
-                "data": {
-                    "topic": normalized_topic,
-                    "missing_angle": cached.missing_angle,
-                    "analysis_status": "ok",
-                    "confidence": parsed_summary.get("confidence"),
-                    "outlet_missing_angles": self._normalize_outlet_missing_angles(
-                        parsed_summary, outlet_sources
-                    ),
-                    "from_cache": True,
-                    "error": False,
-                    "error_message": None,
-                },
-                "error": None,
-            }
+        now = time.time()
+        retry_elapsed = (
+            _GEMINI_RETRY_AFTER_TS is not None and now >= _GEMINI_RETRY_AFTER_TS
+        )
+        in_cooldown = _GEMINI_RETRY_AFTER_TS is not None and now < _GEMINI_RETRY_AFTER_TS
+
+        logger.info(
+            "Missing angle probe: topic=%r same_day_row=%s %s",
+            normalized_topic,
+            cached is not None,
+            _retry_after_status_for_log(),
+        )
+
+        if in_cooldown and cached is None:
+            logger.info(
+                "Missing angle: skipping Gemini (quota cooldown, no same-day cache) topic=%r",
+                normalized_topic,
+            )
+            return self._quota_limited_response(
+                normalized_topic, outlet_sources, arm_retry_after=False
+            )
+
+        if cached is not None:
+            if not retry_elapsed:
+                return self._response_from_topic_analysis_cache(
+                    normalized_topic, cached, outlet_sources
+                )
+            logger.info(
+                "Missing angle: CACHE BYPASS — quota cooldown elapsed, calling Gemini topic=%r %s",
+                normalized_topic,
+                _retry_after_status_for_log(),
+            )
 
         if not self.api_key or "your_gemini_api_key_here" in self.api_key:
             return {
@@ -408,54 +492,70 @@ class LLMAnalyzer:
         pro_name = self.pro_model_name()
         flash_name = self.flash_model_name()
 
+        logger.info(
+            "Missing angle: CACHE MISS — calling Gemini topic=%r outlet_summary_count=%d %s",
+            normalized_topic,
+            len(outlet_summaries),
+            _retry_after_status_for_log(),
+        )
+
         response = None
         pro_exc: BaseException | None = None
         try:
             logger.info(
-                "Analysis attempted with Gemini Pro -> invoking model=%s",
+                "Gemini Pro request: model=%s outlet_summary_count=%d %s",
                 pro_name,
+                len(outlet_summaries),
+                _retry_after_status_for_log(),
             )
+            _clear_gemini_retry_after()
             response = self._generate_with_gemini(
                 pro_name, user_prompt, GEMINI_PRO_TEMPERATURE
             )
-            logger.info("Analysis attempted with Gemini Pro -> Result: Success")
+            logger.info("Gemini Pro -> success topic=%r", normalized_topic)
         except Exception as exc:
             pro_exc = exc
-            logger.info(
-                "Analysis attempted with Gemini Pro -> Result: Fail (%s)",
+            logger.error(
+                "Gemini Pro FAILED topic=%r error=%s: %s",
+                normalized_topic,
                 type(exc).__name__,
+                exc,
+                exc_info=True,
             )
             allow_flash = self._is_gemini_quota_error(exc) or self._is_server_error_for_fallback(
                 exc
             )
             if not allow_flash:
-                traceback.print_exc()
                 return self._llm_error_response(
                     normalized_topic, outlet_sources, str(exc)
                 )
             try:
                 logger.info(
-                    "Gemini Pro failed (%s); attempting Gemini Flash (model=%s)",
-                    type(exc).__name__,
+                    "Gemini Flash fallback: model=%s outlet_summary_count=%d %s",
                     flash_name,
+                    len(outlet_summaries),
+                    _retry_after_status_for_log(),
                 )
                 response = self._generate_with_gemini(
                     flash_name, user_prompt, GEMINI_FLASH_TEMPERATURE
                 )
-                logger.info("Gemini Flash fallback -> Result: Success")
+                logger.info("Gemini Flash -> success topic=%r", normalized_topic)
             except Exception as exc2:
-                logger.warning(
-                    "Gemini Flash fallback -> Result: Fail (%s)",
+                logger.error(
+                    "Gemini Flash FAILED topic=%r error=%s: %s",
+                    normalized_topic,
                     type(exc2).__name__,
+                    exc2,
+                    exc_info=True,
                 )
                 pro_q = pro_exc is not None and self._is_gemini_quota_error(pro_exc)
                 flash_q = self._is_gemini_quota_error(exc2)
                 if pro_q and flash_q:
                     logger.warning(
-                        "Both Gemini Pro and Flash returned quota-class errors; analysis_status=quota_limited"
+                        "Both Gemini Pro and Flash quota-class errors -> quota_limited topic=%r",
+                        normalized_topic,
                     )
                     return self._quota_limited_response(normalized_topic, outlet_sources)
-                traceback.print_exc()
                 return self._llm_error_response(
                     normalized_topic, outlet_sources, str(exc2)
                 )
@@ -467,8 +567,13 @@ class LLMAnalyzer:
                 normalized_topic, outlet_sources, outlet_summaries, parsed, db
             )
         except Exception as exc:
-            logger.warning("Failed to parse or persist Gemini JSON: %s", exc)
-            traceback.print_exc()
+            logger.error(
+                "Gemini response parse/persist FAILED topic=%r: %s: %s",
+                normalized_topic,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
             return self._llm_error_response(
                 normalized_topic, outlet_sources, str(exc)
             )

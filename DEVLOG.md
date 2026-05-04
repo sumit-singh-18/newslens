@@ -506,3 +506,17 @@ Topic words (war, defense, cyber, etc.) were miscounted as right-leaning; bias s
 ### Verification
 - **`NLPPipeline.get_instance().rescore_all_articles(db)`** after the change; **`DELETE`** from **`topic_outlet_framing`** and **`topic_analysis`** to drop stale cached topic analyses.
 - **`npm run build`** in **`frontend/`**: success.
+
+## [2026-05-04] - Issue 3: Missing Angle — quota retry, 2-outlet floor, UI + logs
+
+### What changed
+- **`backend/llm_analyzer.py`**: Module-level **`_GEMINI_RETRY_AFTER_TS`** (wall clock **+65s** after Pro+Flash quota exhaustion). While in cooldown, requests with **no** same-day **`topic_analysis`** row return **`quota_limited`** without calling Gemini (**`arm_retry_after=False`** so the window is not reset). If a same-day row exists, it is returned during cooldown; after the window elapses, the row is **bypassed** and Gemini runs again, with **cache updated** on success. **`MIN_OUTLET_SUMMARIES`** reduced **3 → 2**. Structured **`logger.info` / `logger.error`** for cache probe, hit, miss, cooldown skip, pre-call context (outlet count, **`retry_after`** state), and full exception details.
+- **`frontend/app.js`**: Root **`data.analysis_status`** is merged into normalized **`missing_angle`** so **`quota_limited`** is visible in the card. When **`value`** is null and reasoning looks like quota/capacity, the Missing Angle card and results teaser show: *Analysis will be available in ~1 minute. Search again shortly.*
+- **`backend/tests/test_analyze_resilience.py`**: Autouse reset of **`_GEMINI_RETRY_AFTER_TS`**; new test for cooldown skip + post-window retry.
+
+### Reason
+Gemini free tier **429** left users stuck: same-day **DB** cache could block a real retry after the quota window, and the minimum outlet count was too strict for useful synthesis.
+
+### Verification
+- **`python3 -m pytest backend/tests/test_analyze_resilience.py -v`**: pass.
+- **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.

@@ -126,8 +126,28 @@ const CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
 /** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
 const MISSING_ANGLE_UNAVAILABLE_COPY =
   "Editorial analysis temporarily unavailable. Check back shortly.";
-const MISSING_ANGLE_QUOTA_LIMITED_COPY =
-  "Missing Angle: AI Analysis currently at capacity. Retrying in 60s...";
+/** User-facing copy when backend hit Gemini quota / transient LLM limits (Issue 3). */
+const MISSING_ANGLE_SEARCH_AGAIN_SHORTLY =
+  "Analysis will be available in ~1 minute. Search again shortly.";
+
+function reasoningLooksLikeQuotaOrTransientFailure(reasoning) {
+  const r = String(reasoning ?? "").toLowerCase();
+  return (
+    r.includes("quota") ||
+    r.includes("429") ||
+    r.includes("exceeded") ||
+    r.includes("unavailable")
+  );
+}
+
+/** True when the topic insight is empty but the backend explained a quota/capacity issue. */
+function missingAngleShouldShowQuotaWaitMessage(ma) {
+  if (!ma || typeof ma !== "object") return false;
+  const rawVal = ma.value;
+  const valueMissing =
+    rawVal == null || (typeof rawVal === "string" && rawVal.trim() === "");
+  return valueMissing && reasoningLooksLikeQuotaOrTransientFailure(ma.reasoning);
+}
 
 function missingAngleIsUnavailableUserFacing(ma) {
   if (!ma || typeof ma !== "object") return true;
@@ -145,8 +165,14 @@ function missingAnglePresentationalCopy(ma) {
   const analysisStatus = String(ma?.analysis_status ?? "").toLowerCase();
   if (analysisStatus === "quota_limited") {
     return {
-      body: MISSING_ANGLE_QUOTA_LIMITED_COPY,
-      reasoning: MISSING_ANGLE_QUOTA_LIMITED_COPY,
+      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
+      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
+    };
+  }
+  if (missingAngleShouldShowQuotaWaitMessage(ma)) {
+    return {
+      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
+      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
     };
   }
   if (missingAngleIsUnavailableUserFacing(ma)) {
@@ -372,12 +398,21 @@ function normalizeAnalyzePayload(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
   const fetch = d.fetch && typeof d.fetch === "object" ? d.fetch : {};
+  const maBlock = normalizeMissingAngleBlock(d.missing_angle);
+  const rootAnalysisStatus =
+    d.analysis_status == null || d.analysis_status === ""
+      ? null
+      : String(d.analysis_status);
+  const missing_angle = {
+    ...maBlock,
+    analysis_status: maBlock.analysis_status ?? rootAnalysisStatus,
+  };
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
     status: normalizeCoverageStatus(d.status),
     outlets,
     timeline: normalizeTimeline(d.timeline),
-    missing_angle: normalizeMissingAngleBlock(d.missing_angle),
+    missing_angle,
     fetch,
     coverage_message:
       typeof fetch.coverage_message === "string" && fetch.coverage_message.trim()
@@ -1283,7 +1318,10 @@ function ResultsHeader({
   }, [spectrumExtremes, outlets]);
   const teaser = useMemo(() => {
     if (String(missingAngle?.analysis_status ?? "").toLowerCase() === "quota_limited") {
-      return MISSING_ANGLE_QUOTA_LIMITED_COPY;
+      return MISSING_ANGLE_SEARCH_AGAIN_SHORTLY;
+    }
+    if (missingAngleShouldShowQuotaWaitMessage(missingAngle)) {
+      return MISSING_ANGLE_SEARCH_AGAIN_SHORTLY;
     }
     if (missingAngleIsUnavailableUserFacing(missingAngle)) {
       return MISSING_ANGLE_UNAVAILABLE_COPY;
