@@ -60330,6 +60330,148 @@ function outletKeysWithPositiveTotals(rows, outletSources, mode) {
   });
   return series.filter((s2) => s2.totalValue > 0).map((s2) => s2.source);
 }
+function candidateOutletSources(outlets) {
+  const list = Array.isArray(outlets) ? outlets : [];
+  return list.filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
+}
+function chartOutletKeysFromRows(rows) {
+  const keys2 = /* @__PURE__ */ new Set();
+  const list = Array.isArray(rows) ? rows : [];
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    for (const k2 of Object.keys(row)) {
+      if (k2 !== "date") keys2.add(k2);
+    }
+  }
+  return [...keys2];
+}
+function outletKeysForChart(rows, outlets) {
+  const preferred = candidateOutletSources(outlets);
+  return preferred.length > 0 ? preferred : chartOutletKeysFromRows(rows);
+}
+function isCoverageVolumeDatasetEmpty(rows, outlets) {
+  const list = Array.isArray(rows) ? rows : [];
+  const keys2 = outletKeysForChart(list, outlets);
+  if (!keys2.length) return true;
+  if (!list.length) return true;
+  for (const row of list) {
+    for (const key of keys2) {
+      const raw = row[key];
+      if (raw == null) continue;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n !== 0) return false;
+    }
+  }
+  return true;
+}
+function countDaysWithCoverageVolume(rows, keys2) {
+  const list = Array.isArray(rows) ? rows : [];
+  let count = 0;
+  for (const row of list) {
+    if (!row) continue;
+    let dayHas = false;
+    for (const key of keys2) {
+      const raw = row[key];
+      if (raw == null) continue;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) {
+        dayHas = true;
+        break;
+      }
+    }
+    if (dayHas) count++;
+  }
+  return count;
+}
+function isTimelineBiasDatasetEmpty(rows, outlets) {
+  const list = Array.isArray(rows) ? rows : [];
+  const keys2 = outletKeysForChart(list, outlets);
+  if (!keys2.length) return true;
+  if (!list.length) return true;
+  for (const row of list) {
+    for (const key of keys2) {
+      const raw = row[key];
+      if (raw != null && Number.isFinite(Number(raw))) return false;
+    }
+  }
+  return true;
+}
+function countDaysWithBiasData(rows, keys2) {
+  const list = Array.isArray(rows) ? rows : [];
+  let count = 0;
+  for (const row of list) {
+    if (!row) continue;
+    let dayHas = false;
+    for (const key of keys2) {
+      const raw = row[key];
+      if (raw != null && Number.isFinite(Number(raw))) {
+        dayHas = true;
+        break;
+      }
+    }
+    if (dayHas) count++;
+  }
+  return count;
+}
+function getChartHistoryPartialMeta(rows, outlets, mode) {
+  const list = Array.isArray(rows) ? rows : [];
+  const keys2 = outletKeysForChart(list, outlets);
+  if (!keys2.length) return { show: false, x: 0 };
+  const daysWithData = mode === "coverage" ? countDaysWithCoverageVolume(list, keys2) : countDaysWithBiasData(list, keys2);
+  if (daysWithData === 0) return { show: false, x: 0 };
+  const sparse = list.length < 7 || list.length === 7 && daysWithData < 7;
+  if (!sparse) return { show: false, x: daysWithData };
+  const x2 = list.length < 7 ? list.length : daysWithData;
+  return { show: true, x: x2 };
+}
+function ChartHistoryBuildingEmptyState() {
+  return /* @__PURE__ */ import_react36.default.createElement(
+    "div",
+    {
+      className: "chart-history-building-empty",
+      style: {
+        minHeight: CHART_MIN_HEIGHT,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 20px",
+        textAlign: "center"
+      }
+    },
+    /* @__PURE__ */ import_react36.default.createElement("div", { style: { fontSize: "1.35rem", marginBottom: "10px", lineHeight: 1 }, "aria-hidden": true }, "\u{1F550}"),
+    /* @__PURE__ */ import_react36.default.createElement(
+      "h3",
+      {
+        style: {
+          margin: "0 0 8px",
+          fontSize: "0.98rem",
+          fontWeight: 600,
+          color: "#64748b"
+        }
+      },
+      "Coverage history is building"
+    ),
+    /* @__PURE__ */ import_react36.default.createElement(
+      "p",
+      {
+        style: {
+          margin: 0,
+          fontSize: "0.86rem",
+          color: "#94a3b8",
+          maxWidth: "26rem",
+          lineHeight: 1.55
+        }
+      },
+      "This topic was just searched for the first time. Come back tomorrow to see how coverage volume changes across outlets over time."
+    )
+  );
+}
+function ChartHistoryPartialHint({ x: x2 }) {
+  if (x2 == null || x2 <= 0 || x2 >= 7) return null;
+  const dayLabel = x2 === 1 ? "day" : "days";
+  return /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted", style: { textAlign: "center", margin: "10px 0 0" } }, "Showing ", x2, " ", dayLabel, " of data \u2014 history builds daily as more searches happen");
+}
 var CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
 var MISSING_ANGLE_UNAVAILABLE_COPY = "Editorial analysis temporarily unavailable. Check back shortly.";
 var MISSING_ANGLE_SEARCH_AGAIN_SHORTLY = "Analysis will be available in ~1 minute. Search again shortly.";
@@ -60995,8 +61137,10 @@ function Timeline({ timeline, outlets }) {
     const sources = (outlets || []).filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
     return outletKeysWithPositiveTotals(rows, sources, "bias");
   }, [rows, outlets]);
-  if (!rows.length) {
-    return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Narrative Timeline"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score trend over the last 7 days")), /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status" }, "No timeline data for this window yet."));
+  const timelineEmpty = (0, import_react36.useMemo)(() => isTimelineBiasDatasetEmpty(rows, outlets), [rows, outlets]);
+  const partialMeta = (0, import_react36.useMemo)(() => getChartHistoryPartialMeta(rows, outlets, "timeline"), [rows, outlets]);
+  if (timelineEmpty) {
+    return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Narrative Timeline"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score trend over the last 7 days")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ChartHistoryBuildingEmptyState, null)));
   }
   return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Narrative Timeline"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score trend over the last 7 days")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: "100%", minHeight: CHART_MIN_HEIGHT }, /* @__PURE__ */ import_react36.default.createElement(LineChart, { data: rows, margin: CHART_MARGIN_LINE_AREA }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
     XAxis,
@@ -61031,7 +61175,7 @@ function Timeline({ timeline, outlets }) {
       dot: { r: 3 },
       connectNulls: true
     }
-  ))))));
+  ))))), partialMeta.show ? /* @__PURE__ */ import_react36.default.createElement(ChartHistoryPartialHint, { x: partialMeta.x }) : null);
 }
 function TopicTrendChart({ topic, outlets }) {
   const q = useQuery({
@@ -61046,7 +61190,15 @@ function TopicTrendChart({ topic, outlets }) {
     const sources = list.filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
     return outletKeysWithPositiveTotals(series, sources, "volume");
   }, [series, outlets]);
-  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Topic coverage by outlet"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Article volume per outlet over the last 7 days")), q.isLoading ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status" }, "Loading trend data\u2026") : null, q.isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status error" }, "Could not load trend: ", q.error?.message) : null, q.isSuccess ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: "100%", minHeight: CHART_MIN_HEIGHT }, /* @__PURE__ */ import_react36.default.createElement(AreaChart, { data: series, margin: CHART_MARGIN_LINE_AREA }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
+  const coverageEmpty = (0, import_react36.useMemo)(
+    () => isCoverageVolumeDatasetEmpty(series, outlets),
+    [series, outlets]
+  );
+  const partialMeta = (0, import_react36.useMemo)(
+    () => getChartHistoryPartialMeta(series, outlets, "coverage"),
+    [series, outlets]
+  );
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Topic coverage by outlet"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Article volume per outlet over the last 7 days")), q.isLoading ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status" }, "Loading trend data\u2026") : null, q.isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status error" }, "Could not load trend: ", q.error?.message) : null, q.isSuccess ? coverageEmpty ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ChartHistoryBuildingEmptyState, null)) : /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: "100%", minHeight: CHART_MIN_HEIGHT }, /* @__PURE__ */ import_react36.default.createElement(AreaChart, { data: series, margin: CHART_MARGIN_LINE_AREA }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
     XAxis,
     {
       dataKey: "date",
@@ -61079,7 +61231,7 @@ function TopicTrendChart({ topic, outlets }) {
       fill: OUTLET_COLORS[source] || "#111827",
       fillOpacity: 0.55
     }
-  ))))) : null);
+  ))))), partialMeta.show ? /* @__PURE__ */ import_react36.default.createElement(ChartHistoryPartialHint, { x: partialMeta.x }) : null) : null);
 }
 function MissingAngleCard({ missingAngle }) {
   const { body, reasoning } = missingAnglePresentationalCopy(missingAngle);
