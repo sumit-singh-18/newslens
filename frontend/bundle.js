@@ -60281,6 +60281,37 @@ function normalizeCoverageStatus(raw) {
   if (s2 === COVERAGE_STATUS.HIGH) return COVERAGE_STATUS.HIGH;
   return COVERAGE_STATUS.HIGH;
 }
+var CHART_MARGIN_BOTTOM = { bottom: 30 };
+var CHART_DATE_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec"
+];
+function formatChartAxisDate(value) {
+  if (value == null || value === "") return "";
+  const s2 = String(value).trim();
+  const m = s2.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s2;
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(mo) || mo < 1 || mo > 12 || !Number.isFinite(d)) return s2;
+  return `${CHART_DATE_MONTHS[mo - 1]} ${String(d).padStart(2, "0")}`;
+}
+function chartTooltipLabelFormatter(value) {
+  if (value == null || value === "") return "";
+  const s2 = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s2)) return formatChartAxisDate(s2);
+  return s2;
+}
 var MISSING_ANGLE_UNAVAILABLE_COPY = "Editorial analysis temporarily unavailable. Check back shortly.";
 function missingAngleIsUnavailableUserFacing(ma) {
   if (!ma || typeof ma !== "object") return true;
@@ -60795,7 +60826,17 @@ function SentimentDistribution({ outlets }) {
     })),
     [outlets]
   );
-  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Sentiment Distribution"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Positive / neutral / negative by outlet")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: 320 }, /* @__PURE__ */ import_react36.default.createElement(BarChart, { data }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(XAxis, { dataKey: "outlet" }), /* @__PURE__ */ import_react36.default.createElement(YAxis, { allowDecimals: false }), /* @__PURE__ */ import_react36.default.createElement(Tooltip, null), /* @__PURE__ */ import_react36.default.createElement(Legend, null), /* @__PURE__ */ import_react36.default.createElement(Bar, { dataKey: "positive", fill: "#10B981", radius: [6, 6, 0, 0] }), /* @__PURE__ */ import_react36.default.createElement(Bar, { dataKey: "neutral", fill: "#9CA3AF", radius: [6, 6, 0, 0] }), /* @__PURE__ */ import_react36.default.createElement(Bar, { dataKey: "negative", fill: "#EF4444", radius: [6, 6, 0, 0] })))));
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Sentiment Distribution"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Positive / neutral / negative by outlet")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: 320 }, /* @__PURE__ */ import_react36.default.createElement(BarChart, { data, margin: CHART_MARGIN_BOTTOM }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
+    XAxis,
+    {
+      dataKey: "outlet",
+      angle: -45,
+      textAnchor: "end",
+      height: 56,
+      interval: 0,
+      tick: { fontSize: 11 }
+    }
+  ), /* @__PURE__ */ import_react36.default.createElement(YAxis, { allowDecimals: false }), /* @__PURE__ */ import_react36.default.createElement(Tooltip, { labelFormatter: chartTooltipLabelFormatter }), /* @__PURE__ */ import_react36.default.createElement(Legend, null), /* @__PURE__ */ import_react36.default.createElement(Bar, { dataKey: "positive", fill: "#10B981", radius: [6, 6, 0, 0] }), /* @__PURE__ */ import_react36.default.createElement(Bar, { dataKey: "neutral", fill: "#9CA3AF", radius: [6, 6, 0, 0] }), /* @__PURE__ */ import_react36.default.createElement(Bar, { dataKey: "negative", fill: "#EF4444", radius: [6, 6, 0, 0] })))));
 }
 function Timeline({ timeline, outlets }) {
   const rows = Array.isArray(timeline) ? timeline : [];
@@ -60803,7 +60844,17 @@ function Timeline({ timeline, outlets }) {
   if (!rows.length) {
     return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Narrative Timeline"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score trend over the last 7 days")), /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status" }, "No timeline data for this window yet."));
   }
-  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Narrative Timeline"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score trend over the last 7 days")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: 320 }, /* @__PURE__ */ import_react36.default.createElement(LineChart, { data: rows }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(XAxis, { dataKey: "date" }), /* @__PURE__ */ import_react36.default.createElement(YAxis, { domain: [-1, 1] }), /* @__PURE__ */ import_react36.default.createElement(Tooltip, null), /* @__PURE__ */ import_react36.default.createElement(Legend, null), activeOutlets.map((outlet) => /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Narrative Timeline"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score trend over the last 7 days")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: 320 }, /* @__PURE__ */ import_react36.default.createElement(LineChart, { data: rows, margin: CHART_MARGIN_BOTTOM }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
+    XAxis,
+    {
+      dataKey: "date",
+      angle: -45,
+      textAnchor: "end",
+      height: 56,
+      tickFormatter: formatChartAxisDate,
+      tick: { fontSize: 11 }
+    }
+  ), /* @__PURE__ */ import_react36.default.createElement(YAxis, { domain: [-1, 1] }), /* @__PURE__ */ import_react36.default.createElement(Tooltip, { labelFormatter: chartTooltipLabelFormatter }), /* @__PURE__ */ import_react36.default.createElement(Legend, null), activeOutlets.map((outlet) => /* @__PURE__ */ import_react36.default.createElement(
     Line,
     {
       key: outlet.source,
@@ -60826,7 +60877,17 @@ function TopicTrendChart({ topic, outlets }) {
     staleTime: 3e4
   });
   const series = q.data?.series || [];
-  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card topic-trend-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Topic coverage by outlet"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Article volume per outlet over the last 7 days")), q.isLoading ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status" }, "Loading trend data\u2026") : null, q.isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status error" }, "Could not load trend: ", q.error?.message) : null, q.isSuccess ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap chart-wrap-tall" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: 360 }, /* @__PURE__ */ import_react36.default.createElement(AreaChart, { data: series }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(XAxis, { dataKey: "date" }), /* @__PURE__ */ import_react36.default.createElement(YAxis, { allowDecimals: false }), /* @__PURE__ */ import_react36.default.createElement(Tooltip, null), /* @__PURE__ */ import_react36.default.createElement(Legend, null), activeOutlets.map((outlet) => /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card chart-card topic-trend-card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Topic coverage by outlet"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Article volume per outlet over the last 7 days")), q.isLoading ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status" }, "Loading trend data\u2026") : null, q.isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "chart-status error" }, "Could not load trend: ", q.error?.message) : null, q.isSuccess ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-wrap chart-wrap-tall" }, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: 360 }, /* @__PURE__ */ import_react36.default.createElement(AreaChart, { data: series, margin: CHART_MARGIN_BOTTOM }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
+    XAxis,
+    {
+      dataKey: "date",
+      angle: -45,
+      textAnchor: "end",
+      height: 56,
+      tickFormatter: formatChartAxisDate,
+      tick: { fontSize: 11 }
+    }
+  ), /* @__PURE__ */ import_react36.default.createElement(YAxis, { allowDecimals: false }), /* @__PURE__ */ import_react36.default.createElement(Tooltip, { labelFormatter: chartTooltipLabelFormatter }), /* @__PURE__ */ import_react36.default.createElement(Legend, null), activeOutlets.map((outlet) => /* @__PURE__ */ import_react36.default.createElement(
     Area,
     {
       key: outlet.source,
