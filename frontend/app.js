@@ -20,8 +20,6 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import html2canvas from "html2canvas";
-
 // #region agent log
 fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
   method: "POST",
@@ -39,6 +37,7 @@ fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
 
 const API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
 const HISTORY_KEY = "newslens-search-history";
+const READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 const DEFAULT_SERIES_LABEL = "14d";
 
 const SUGGESTED_TOPICS = ["15-Minute Cities", "Digital Pound", "Right to Repair"];
@@ -441,14 +440,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function firstSentence(text) {
-  const t = String(text).trim();
-  if (!t) return "";
-  const idx = t.search(/[.!?](\s|$)/);
-  if (idx === -1) return t;
-  return t.slice(0, idx + 1).trim();
-}
-
 /** Prefer stored framing; never show the empty-state copy when the outlet has articles. */
 function outletFramingBody(outlet) {
   const hasArticles = (outlet.article_count || 0) > 0;
@@ -470,31 +461,61 @@ function normalizeOutlet(o) {
       bias_labels: {},
       dominant_sentiment_label: null,
       dominant_bias_label: null,
+      sentiment_label: null,
+      bias_label: null,
+      bias_score: null,
+      emotional_intensity: null,
       missing_angle: null,
       framing_summary: null,
       headline: null,
+      top_article_url: null,
+      top_article_headline: null,
+      top_article_preview: null,
     };
   }
   const sl =
     o.sentiment_labels && typeof o.sentiment_labels === "object" ? { ...o.sentiment_labels } : {};
   const bl = o.bias_labels && typeof o.bias_labels === "object" ? { ...o.bias_labels } : {};
+  const avg_sentiment_score =
+    typeof o.avg_sentiment_score === "number" && Number.isFinite(o.avg_sentiment_score)
+      ? o.avg_sentiment_score
+      : null;
+  const avg_bias_score =
+    typeof o.avg_bias_score === "number" && Number.isFinite(o.avg_bias_score) ? o.avg_bias_score : null;
+  const dominant_sentiment_label =
+    o.dominant_sentiment_label == null ? null : String(o.dominant_sentiment_label);
+  const dominant_bias_label = o.dominant_bias_label == null ? null : String(o.dominant_bias_label);
+  const sentiment_label =
+    o.sentiment_label != null && String(o.sentiment_label).trim()
+      ? String(o.sentiment_label).trim()
+      : dominant_sentiment_label;
+  const bias_label =
+    o.bias_label != null && String(o.bias_label).trim()
+      ? String(o.bias_label).trim()
+      : dominant_bias_label;
+  const bias_score =
+    typeof o.bias_score === "number" && Number.isFinite(o.bias_score) ? o.bias_score : avg_bias_score;
+  let emotional_intensity = null;
+  if (typeof o.emotional_intensity === "number" && Number.isFinite(o.emotional_intensity)) {
+    emotional_intensity = o.emotional_intensity;
+  } else if (o.emotional_intensity != null && o.emotional_intensity !== "") {
+    const p = Number.parseFloat(String(o.emotional_intensity));
+    if (Number.isFinite(p)) emotional_intensity = p;
+  }
   return {
     source: typeof o.source === "string" && o.source.trim() ? o.source.trim() : "Unknown",
     article_count:
       typeof o.article_count === "number" && Number.isFinite(o.article_count) ? o.article_count : 0,
-    avg_sentiment_score:
-      typeof o.avg_sentiment_score === "number" && Number.isFinite(o.avg_sentiment_score)
-        ? o.avg_sentiment_score
-        : null,
-    avg_bias_score:
-      typeof o.avg_bias_score === "number" && Number.isFinite(o.avg_bias_score)
-        ? o.avg_bias_score
-        : null,
+    avg_sentiment_score,
+    avg_bias_score,
     sentiment_labels: sl,
     bias_labels: bl,
-    dominant_sentiment_label:
-      o.dominant_sentiment_label == null ? null : String(o.dominant_sentiment_label),
-    dominant_bias_label: o.dominant_bias_label == null ? null : String(o.dominant_bias_label),
+    dominant_sentiment_label,
+    dominant_bias_label,
+    sentiment_label,
+    bias_label,
+    bias_score,
+    emotional_intensity,
     missing_angle:
       o.missing_angle == null || o.missing_angle === ""
         ? null
@@ -508,6 +529,16 @@ function normalizeOutlet(o) {
         : typeof o.framing_summary === "string"
           ? o.framing_summary
           : String(o.framing_summary),
+    top_article_url:
+      o.top_article_url == null || o.top_article_url === "" ? null : String(o.top_article_url),
+    top_article_headline:
+      o.top_article_headline == null || o.top_article_headline === ""
+        ? null
+        : String(o.top_article_headline),
+    top_article_preview:
+      o.top_article_preview == null || o.top_article_preview === ""
+        ? null
+        : String(o.top_article_preview),
   };
 }
 
@@ -1465,6 +1496,319 @@ function InsufficientCoverageCard({ onTryBroaderSearch }) {
   );
 }
 
+function readAcrossReadKey(topic, source) {
+  return `${READ_ACROSS_READ_PREFIX}:${topic}::${source}`;
+}
+
+function readAcrossIsMarked(topic, source) {
+  try {
+    return localStorage.getItem(readAcrossReadKey(topic, source)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function readAcrossSetMarked(topic, source, marked) {
+  try {
+    const k = readAcrossReadKey(topic, source);
+    if (marked) localStorage.setItem(k, "1");
+    else localStorage.removeItem(k);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function outletBiasSortScore(o) {
+  const v = o.bias_score ?? o.avg_bias_score;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function outletHeadlineForCompare(o) {
+  const h = o.top_article_headline ?? o.headline;
+  return h != null && String(h).trim() ? String(h).trim() : null;
+}
+
+function outletEmotionalIntensityValue(o) {
+  if (typeof o.emotional_intensity === "number" && Number.isFinite(o.emotional_intensity)) {
+    return o.emotional_intensity;
+  }
+  if (typeof o.avg_sentiment_score === "number" && Number.isFinite(o.avg_sentiment_score)) {
+    return Math.min(10, Math.abs(o.avg_sentiment_score) * 10);
+  }
+  return null;
+}
+
+function readAcrossBorderColor(label) {
+  const b = biasSpectrumBucket(label);
+  if (b === "left") return "#3B82F6";
+  if (b === "right") return "#EF4444";
+  return "#6B7280";
+}
+
+function missingAngleHasRevealContent(ma) {
+  if (!ma || typeof ma !== "object") return false;
+  const v = ma.value;
+  return v != null && String(v).trim() !== "";
+}
+
+function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
+  const sorted = useMemo(() => {
+    const list = Array.isArray(outlets) ? [...outlets] : [];
+    return list.sort((a, b) => {
+      const sa = outletBiasSortScore(a);
+      const sb = outletBiasSortScore(b);
+      const fa = sa == null ? 1 : 0;
+      const fb = sb == null ? 1 : 0;
+      if (fa !== fb) return fa - fb;
+      if (sa == null || sb == null) return 0;
+      return sa - sb;
+    });
+  }, [outlets]);
+
+  const [readSet, setReadSet] = useState(() => new Set());
+  const [missingExpanded, setMissingExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!topic) return;
+    const next = new Set();
+    for (const o of sorted) {
+      if (readAcrossIsMarked(topic, o.source)) next.add(o.source);
+    }
+    setReadSet(next);
+    setMissingExpanded(false);
+  }, [topic, sorted]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const total = sorted.length;
+  const readCount = sorted.filter((o) => readSet.has(o.source)).length;
+  const allRead = total > 0 && readCount === total;
+
+  const intensityRanked = useMemo(() => {
+    return sorted
+      .map((o) => ({ outlet: o, ei: outletEmotionalIntensityValue(o) }))
+      .filter((x) => x.ei != null);
+  }, [sorted]);
+
+  const mostCharged = useMemo(() => {
+    if (!intensityRanked.length) return null;
+    let pick = intensityRanked[0].outlet;
+    let best = intensityRanked[0].ei;
+    for (let i = 1; i < intensityRanked.length; i++) {
+      const { outlet, ei } = intensityRanked[i];
+      if (ei > best) {
+        best = ei;
+        pick = outlet;
+      }
+    }
+    return pick;
+  }, [intensityRanked]);
+
+  const mostNeutralFraming = useMemo(() => {
+    if (!intensityRanked.length) return null;
+    let pick = intensityRanked[0].outlet;
+    let best = intensityRanked[0].ei;
+    for (let i = 1; i < intensityRanked.length; i++) {
+      const { outlet, ei } = intensityRanked[i];
+      if (ei < best) {
+        best = ei;
+        pick = outlet;
+      }
+    }
+    return pick;
+  }, [intensityRanked]);
+
+  const showMissingAngle = missingAngleHasRevealContent(missingAngle);
+
+  const toggleRead = (source, checked) => {
+    readAcrossSetMarked(topic, source, checked);
+    setReadSet((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(source);
+      else next.delete(source);
+      return next;
+    });
+  };
+
+  return (
+    <div
+      className="read-across-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="read-across-title"
+    >
+      <div className="read-across-backdrop" aria-hidden="true" />
+      <div className="read-across-panel-shell">
+        <div className="read-across-panel">
+          <button
+            type="button"
+            className="read-across-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+          <header className="read-across-panel-header">
+            <h2 id="read-across-title" className="read-across-title">
+              Read '{topic}' Across the Bias Spectrum
+            </h2>
+            <p className="read-across-subtitle">Same story. Different framing.</p>
+          </header>
+
+          <p
+            className={`read-across-tracker${allRead ? " read-across-tracker--complete" : ""}`}
+          >
+            {allRead
+              ? "You've read the full spectrum ✓"
+              : `Read ${readCount} of ${total} perspectives`}
+          </p>
+
+          <div className="read-across-cards">
+            {sorted.map((o) => {
+              const border = readAcrossBorderColor(o.bias_label);
+              const headline = outletHeadlineForCompare(o);
+              const preview =
+                o.top_article_preview != null && String(o.top_article_preview).trim()
+                  ? String(o.top_article_preview).trim()
+                  : null;
+              const sentimentLabel =
+                o.sentiment_label != null && String(o.sentiment_label).trim()
+                  ? String(o.sentiment_label).trim()
+                  : null;
+              const biasLbl =
+                o.bias_label != null && String(o.bias_label).trim()
+                  ? String(o.bias_label).trim()
+                  : null;
+              const showUrl = o.top_article_url != null && String(o.top_article_url).trim() !== "";
+              const checked = readSet.has(o.source);
+              const safeId = `read-across-${topic.replace(/[^\w-]+/g, "-").slice(0, 48)}-${o.source.replace(/[^\w-]+/g, "-").slice(0, 40)}`;
+
+              return (
+                <article
+                  key={o.source}
+                  className={`read-across-card${checked ? " read-across-card--read" : ""}`}
+                  style={{ borderLeftColor: border, borderLeftWidth: "4px", borderLeftStyle: "solid" }}
+                >
+                  <div className="read-across-card-body">
+                    <div className="read-across-card-top">
+                      <h3 className="read-across-outlet-name">{o.source}</h3>
+                      {biasLbl ? (
+                        <span className={biasBadgeClass(biasLbl)}>{biasLbl}</span>
+                      ) : null}
+                    </div>
+                    {headline ? <p className="read-across-headline">{headline}</p> : null}
+                    {preview ? <p className="read-across-preview">{preview}</p> : null}
+                    {sentimentLabel ? (
+                      <span className={sentimentBadgeClass(sentimentLabel)}>
+                        {sentimentLabel.toUpperCase()}
+                      </span>
+                    ) : null}
+                    {showUrl ? (
+                      <a
+                        className="read-across-article-btn"
+                        href={o.top_article_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Read Full Article →
+                      </a>
+                    ) : null}
+                  </div>
+                  {checked ? (
+                    <div className="read-across-read-mask" aria-hidden="true">
+                      <span className="read-across-read-label">✓ Read</span>
+                    </div>
+                  ) : null}
+                  <div className="read-across-card-footer">
+                    <label className="read-across-check-label" htmlFor={safeId}>
+                      <input
+                        id={safeId}
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => toggleRead(o.source, e.target.checked)}
+                      />
+                      Mark as read
+                    </label>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <section className="read-across-framing-diff" aria-labelledby="framing-diff-heading">
+            <h3 id="framing-diff-heading">How framing differs across the spectrum</h3>
+            <div className="read-across-compare-rows">
+              <div className="read-across-compare-row">
+                <div className="read-across-compare-prompt">Most charged language:</div>
+                {mostCharged ? (
+                  <div className="read-across-compare-body">
+                    <span className="read-across-compare-outlet">{mostCharged.source}</span>
+                    {outletHeadlineForCompare(mostCharged) ? (
+                      <span className="read-across-compare-quote">
+                        “{outletHeadlineForCompare(mostCharged)}”
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="read-across-compare-row">
+                <div className="read-across-compare-prompt">Most neutral framing:</div>
+                {mostNeutralFraming ? (
+                  <div className="read-across-compare-body">
+                    <span className="read-across-compare-outlet">{mostNeutralFraming.source}</span>
+                    {outletHeadlineForCompare(mostNeutralFraming) ? (
+                      <span className="read-across-compare-quote">
+                        “{outletHeadlineForCompare(mostNeutralFraming)}”
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          {showMissingAngle ? (
+            <section className="read-across-missing-wrap" aria-labelledby="missing-angle-toggle">
+              <button
+                type="button"
+                id="missing-angle-toggle"
+                className="read-across-missing-toggle"
+                aria-expanded={missingExpanded}
+                onClick={() => setMissingExpanded((v) => !v)}
+              >
+                What everyone missed →
+              </button>
+              <div
+                className={`read-across-missing-expand${missingExpanded ? " is-expanded" : ""}`}
+              >
+                <div className="read-across-missing-inner">
+                  {missingAngle?.value != null && String(missingAngle.value).trim() ? (
+                    <p className="read-across-missing-text">{String(missingAngle.value).trim()}</p>
+                  ) : null}
+                  {missingAngle?.reasoning != null && String(missingAngle.reasoning).trim() ? (
+                    <p className="read-across-missing-reason">{String(missingAngle.reasoning).trim()}</p>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Header({ onStartAnalysis }) {
   return (
     <header className="topbar">
@@ -1487,17 +1831,7 @@ function Header({ onStartAnalysis }) {
   );
 }
 
-function ResultsHeader({
-  topic,
-  outlets,
-  biasDistribution,
-  spectrumExtremes,
-  missingAngle,
-  shareCardRef,
-  onShare,
-  shareBusy,
-  shareError,
-}) {
+function ResultsHeader({ topic, outlets, biasDistribution, spectrumExtremes, onOpenReadAcross }) {
   const dist = useMemo(() => computeBiasDistribution(biasDistribution), [biasDistribution]);
   const ex = useMemo(() => {
     const fb = extremOutlets(outlets);
@@ -1508,21 +1842,6 @@ function ResultsHeader({
       right: mr != null && String(mr).trim() !== "" ? mr : fb.right || "—",
     };
   }, [spectrumExtremes, outlets]);
-  const teaser = useMemo(() => {
-    if (String(missingAngle?.analysis_status ?? "").toLowerCase() === "quota_limited") {
-      return MISSING_ANGLE_SEARCH_AGAIN_SHORTLY;
-    }
-    if (missingAngleShouldShowQuotaWaitMessage(missingAngle)) {
-      return MISSING_ANGLE_SEARCH_AGAIN_SHORTLY;
-    }
-    if (missingAngleIsUnavailableUserFacing(missingAngle)) {
-      return MISSING_ANGLE_UNAVAILABLE_COPY;
-    }
-    const v = missingAngle?.value;
-    if (!v || typeof v !== "string") return "Perspective gaps may appear as more outlets publish.";
-    const one = firstSentence(v) || v;
-    return one.length > 140 ? `${one.slice(0, 137)}…` : one;
-  }, [missingAngle]);
 
   return (
     <div className="results-header card">
@@ -1532,25 +1851,10 @@ function ResultsHeader({
         <p className="results-meta muted">
           {dist.text} · Most left: {ex.left || "—"} · Most right: {ex.right || "—"}
         </p>
-        {shareError ? <p className="share-inline-error">{shareError}</p> : null}
       </div>
-      <button
-        type="button"
-        className="btn-share"
-        disabled={shareBusy}
-        onClick={() => onShare(shareCardRef)}
-      >
-        {shareBusy ? "Saving…" : "Share"}
+      <button type="button" className="btn-read-across-bias" onClick={onOpenReadAcross}>
+        Read Across the Bias →
       </button>
-      <div ref={shareCardRef} className="share-card-capture share-card-offscreen" aria-hidden="true">
-        <div className="share-card-brand">NewsLens</div>
-        <p className="share-card-topic">{topic}</p>
-        <p className="share-card-line">Bias mix: {dist.text}</p>
-        <p className="share-card-line">
-          Most left: {ex.left || "—"} · Most right: {ex.right || "—"}
-        </p>
-        <p className="share-card-teaser">{teaser}</p>
-      </div>
     </div>
   );
 }
@@ -1560,10 +1864,7 @@ function AnalysisResults({
   compareSelection,
   onCompareClick,
   onExitComparison,
-  shareCardRef,
-  onShare,
-  shareBusy,
-  shareError,
+  onOpenReadAcross,
   spectrumFetching,
   onTryBroaderSearch,
   onSearchTopic,
@@ -1614,11 +1915,7 @@ function AnalysisResults({
           most_left_outlet: data.most_left_outlet,
           most_right_outlet: data.most_right_outlet,
         }}
-        missingAngle={data.missing_angle}
-        shareCardRef={shareCardRef}
-        onShare={onShare}
-        shareBusy={shareBusy}
-        shareError={shareError}
+        onOpenReadAcross={onOpenReadAcross}
       />
       {status === COVERAGE_STATUS.DEVELOPING ? <DevelopingStoryBanner /> : null}
       {status === COVERAGE_STATUS.INSUFFICIENT ? (
@@ -1724,10 +2021,8 @@ function App() {
   const [topic, setTopic] = useState("");
   const [history, setHistory] = useState(readHistory);
   const searchRef = useRef(null);
-  const shareCardRef = useRef(null);
   const [compareSelection, setCompareSelection] = useState([]);
-  const [shareBusy, setShareBusy] = useState(false);
-  const [shareError, setShareError] = useState(null);
+  const [readAcrossOpen, setReadAcrossOpen] = useState(false);
 
   const query = useQuery({
     queryKey: ["analysis", topic],
@@ -1806,29 +2101,6 @@ function App() {
 
   const exitComparison = () => setCompareSelection([]);
 
-  const handleShare = async (ref) => {
-    const el = ref?.current;
-    if (!el) return;
-    setShareError(null);
-    setShareBusy(true);
-    try {
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-      });
-      const link = document.createElement("a");
-      link.download = `newslens-${topic.replace(/\s+/g, "-").slice(0, 40)}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    } catch (e) {
-      console.error(e);
-      setShareError("Could not generate image. Try again.");
-    } finally {
-      setShareBusy(false);
-    }
-  };
-
   const data = query.data;
 
   return (
@@ -1857,15 +2129,20 @@ function App() {
             compareSelection={compareSelection}
             onCompareClick={handleCompareClick}
             onExitComparison={exitComparison}
-            shareCardRef={shareCardRef}
-            onShare={handleShare}
-            shareBusy={shareBusy}
-            shareError={shareError}
+            onOpenReadAcross={() => setReadAcrossOpen(true)}
             spectrumFetching={query.isFetching}
             onTryBroaderSearch={handleTryBroaderSearch}
             onSearchTopic={runSearch}
           />
         </ErrorBoundary>
+      ) : null}
+      {readAcrossOpen && data ? (
+        <ReadAcrossBiasOverlay
+          topic={data.topic || ""}
+          outlets={data.outlets || []}
+          missingAngle={data.missing_angle}
+          onClose={() => setReadAcrossOpen(false)}
+        />
       ) : null}
     </div>
   );

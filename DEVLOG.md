@@ -557,3 +557,13 @@ Post-fetch filtering missed many **NewsAPI** off-topic hits; scoring before pers
 
 ### Verification
 - **`GET /analyze?topic=trade+war`**: each outlet includes the three fields.
+
+## [2026-05-04] - Read Across the Bias overlay (frontend)
+
+### What changed
+- **`frontend/app.js`**: Replaced the results **Share** control (and **`html2canvas`**) with a dark navy **Read Across the Bias →** button that opens a full-screen overlay (backdrop fade-in **300ms**, centered white panel **max-width 1100px**, **ESC** / **×** close, **`normalizeOutlet`** extended for **`top_article_*`**, **`bias_score`**, **`sentiment_label`**, **`bias_label`**, **`emotional_intensity`**). Added **ReadAcrossBiasOverlay**: perspective tracker with **`localStorage`** **Mark as read** per topic+outlet, outlet cards sorted by **`bias_score`** ascending with left/center/right border colors, sentiment and bias badges, optional **Read Full Article →**, **How framing differs** (max/min **emotional intensity** vs headline text), and collapsible **What everyone missed →** when topic **`missing_angle.value`** is present.
+- **`frontend/styles.css`**: **`btn-read-across-bias`** and overlay/card/responsive (**≤768px**) layout styles.
+- **`frontend/package.json`**: Removed unused **`html2canvas`** dependency.
+
+### Verification
+- **`npm run build`** in **`frontend/`**: success (`bundle.js` updated).
