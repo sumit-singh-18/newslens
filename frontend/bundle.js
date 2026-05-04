@@ -60268,6 +60268,19 @@ fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
 var API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
 var HISTORY_KEY = "newslens-search-history";
 var DEFAULT_SERIES_LABEL = "14d";
+var SUGGESTED_TOPICS = ["15-Minute Cities", "Digital Pound", "Right to Repair"];
+var COVERAGE_STATUS = {
+  HIGH: "high",
+  DEVELOPING: "developing",
+  INSUFFICIENT: "insufficient"
+};
+function normalizeCoverageStatus(raw) {
+  const s2 = raw == null ? "" : String(raw).trim().toLowerCase();
+  if (s2 === COVERAGE_STATUS.DEVELOPING) return COVERAGE_STATUS.DEVELOPING;
+  if (s2 === COVERAGE_STATUS.INSUFFICIENT) return COVERAGE_STATUS.INSUFFICIENT;
+  if (s2 === COVERAGE_STATUS.HIGH) return COVERAGE_STATUS.HIGH;
+  return COVERAGE_STATUS.HIGH;
+}
 var MISSING_ANGLE_UNAVAILABLE_COPY = "Editorial analysis temporarily unavailable. Check back shortly.";
 function missingAngleIsUnavailableUserFacing(ma) {
   if (!ma || typeof ma !== "object") return true;
@@ -60446,6 +60459,7 @@ function normalizeAnalyzePayload(raw) {
   const fetch2 = d.fetch && typeof d.fetch === "object" ? d.fetch : {};
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
+    status: normalizeCoverageStatus(d.status),
     outlets,
     timeline: normalizeTimeline(d.timeline),
     missing_angle: normalizeMissingAngleBlock(d.missing_angle),
@@ -60635,7 +60649,7 @@ function extremOutlets(outlets) {
 function LoadingSkeleton() {
   return /* @__PURE__ */ import_react36.default.createElement("section", { className: "skeleton-grid" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card tall" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card wide" }));
 }
-function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExtremes }) {
+function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExtremes, isFetching }) {
   const list = Array.isArray(outlets) ? outlets : [];
   const widths = (0, import_react36.useMemo)(
     () => spectrumSegmentWidths(biasDistribution, list),
@@ -60671,19 +60685,28 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
     const lanes = maxLane < 0 ? 0 : maxLane + 1;
     return 36 + lanes * 16;
   }, [placedMarkers]);
-  return /* @__PURE__ */ import_react36.default.createElement("section", { id: "dashboard", className: "bias-hero card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Outlet marker spectrum"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Each outlet positioned by average bias score for this topic")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-spectrum-visual" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "spectrum-gradient-bar", "aria-hidden": "true" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "spectrum-segment spectrum-segment-left", style: { flex: widths.left } }), /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("section", { id: "dashboard", className: "bias-hero card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Outlet marker spectrum"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Each outlet positioned by average bias score for this topic")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-spectrum-visual" }, /* @__PURE__ */ import_react36.default.createElement(
     "div",
     {
-      className: "spectrum-segment spectrum-segment-center",
-      style: { flex: widths.center }
-    }
+      className: `spectrum-gradient-bar${isFetching ? " spectrum-bar-shimmer" : ""}`,
+      "aria-hidden": "true"
+    },
+    /* @__PURE__ */ import_react36.default.createElement("div", { className: "spectrum-segment spectrum-segment-left", style: { flex: widths.left } }),
+    /* @__PURE__ */ import_react36.default.createElement(
+      "div",
+      {
+        className: "spectrum-segment spectrum-segment-center",
+        style: { flex: widths.center }
+      }
+    ),
+    /* @__PURE__ */ import_react36.default.createElement(
+      "div",
+      {
+        className: "spectrum-segment spectrum-segment-right",
+        style: { flex: widths.right }
+      }
+    )
   ), /* @__PURE__ */ import_react36.default.createElement(
-    "div",
-    {
-      className: "spectrum-segment spectrum-segment-right",
-      style: { flex: widths.right }
-    }
-  )), /* @__PURE__ */ import_react36.default.createElement(
     "div",
     {
       className: "spectrum-marker-strip",
@@ -60820,6 +60843,12 @@ function MissingAngleCard({ missingAngle }) {
   const { body, reasoning } = missingAnglePresentationalCopy(missingAngle);
   return /* @__PURE__ */ import_react36.default.createElement("section", { id: "methodology", className: "missing-angle card" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Editorial insight"), /* @__PURE__ */ import_react36.default.createElement("h2", null, "Missing Angle"), /* @__PURE__ */ import_react36.default.createElement("p", null, body), /* @__PURE__ */ import_react36.default.createElement("div", { className: "reasoning-box" }, /* @__PURE__ */ import_react36.default.createElement("h4", null, "Reasoning"), /* @__PURE__ */ import_react36.default.createElement("p", null, reasoning)));
 }
+function DevelopingStoryBanner() {
+  return /* @__PURE__ */ import_react36.default.createElement("div", { className: "developing-story-banner", role: "status" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-icon", "aria-hidden": true }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-dot" }), /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-ring" })), /* @__PURE__ */ import_react36.default.createElement("p", { className: "developing-story-copy" }, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Developing Story:"), " This topic has emerging coverage. Analysis will refine as more sources report."));
+}
+function InsufficientCoverageCard({ onTryBroaderSearch }) {
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card insufficient-coverage-card", "aria-labelledby": "insufficient-coverage-heading" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Coverage"), /* @__PURE__ */ import_react36.default.createElement("h2", { id: "insufficient-coverage-heading", className: "insufficient-coverage-title" }, "Not enough coverage"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "insufficient-coverage-body" }, "Few articles matched this topic in our current window. Try a shorter or broader query to surface more outlets."), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-broader-search", onClick: onTryBroaderSearch }, "Try a broader search"));
+}
 function Header({ onStartAnalysis }) {
   return /* @__PURE__ */ import_react36.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand-lockup" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand" }, "NewsLens"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "brand-tag" }, "Truth in headlines. Bias in framing.")), /* @__PURE__ */ import_react36.default.createElement("nav", null, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "active" }, "Dashboard"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#topics" }, "Topics"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#outlets" }, "Outlets"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#methodology" }, "Methodology")), /* @__PURE__ */ import_react36.default.createElement("button", { className: "cta", onClick: onStartAnalysis }, "Start Analysis"));
 }
@@ -60872,12 +60901,15 @@ function AnalysisResults({
   shareCardRef,
   onShare,
   shareBusy,
-  shareError
+  shareError,
+  spectrumFetching,
+  onTryBroaderSearch
 }) {
   const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
   const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
   const comparing = compareSelection.length === 2;
   const coverageShortfall = outlets.length === 0 && data?.coverage_message ? String(data.coverage_message) : "";
+  const status = data?.status || COVERAGE_STATUS.HIGH;
   return /* @__PURE__ */ import_react36.default.createElement("main", { className: "results-stack" }, coverageShortfall ? /* @__PURE__ */ import_react36.default.createElement("section", { className: "card coverage-shortfall", role: "status" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Coverage"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "coverage-shortfall-msg" }, coverageShortfall)) : null, /* @__PURE__ */ import_react36.default.createElement(
     ResultsHeader,
     {
@@ -60894,7 +60926,7 @@ function AnalysisResults({
       shareBusy,
       shareError
     }
-  ), comparing ? /* @__PURE__ */ import_react36.default.createElement(ComparisonPanel, { pair: compareSelection, outlets, onExit: onExitComparison }) : null, /* @__PURE__ */ import_react36.default.createElement(
+  ), status === COVERAGE_STATUS.DEVELOPING ? /* @__PURE__ */ import_react36.default.createElement(DevelopingStoryBanner, null) : null, status === COVERAGE_STATUS.INSUFFICIENT ? /* @__PURE__ */ import_react36.default.createElement(InsufficientCoverageCard, { onTryBroaderSearch }) : null, comparing ? /* @__PURE__ */ import_react36.default.createElement(ComparisonPanel, { pair: compareSelection, outlets, onExit: onExitComparison }) : null, /* @__PURE__ */ import_react36.default.createElement(
     BiasSpectrum,
     {
       outlets,
@@ -60903,7 +60935,8 @@ function AnalysisResults({
       spectrumExtremes: {
         most_left_outlet: data.most_left_outlet,
         most_right_outlet: data.most_right_outlet
-      }
+      },
+      isFetching: spectrumFetching
     }
   ), /* @__PURE__ */ import_react36.default.createElement(OutletGrid, { outlets, compareSelection, onCompareClick }), /* @__PURE__ */ import_react36.default.createElement(HeadlineComparison, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-grid" }, /* @__PURE__ */ import_react36.default.createElement(SentimentDistribution, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "timeline-column" }, /* @__PURE__ */ import_react36.default.createElement(Timeline, { timeline, outlets }), /* @__PURE__ */ import_react36.default.createElement(TopicTrendChart, { topic: data.topic || "", outlets }))), /* @__PURE__ */ import_react36.default.createElement(MissingAngleCard, { missingAngle: data.missing_angle }));
 }
@@ -60917,7 +60950,7 @@ function Hero({
   history,
   runSearch
 }) {
-  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "hero" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "NewsLens editorial intelligence"), /* @__PURE__ */ import_react36.default.createElement("h1", null, "Read the same story through every bias line."), /* @__PURE__ */ import_react36.default.createElement("p", { className: "lede" }, "NewsLens maps truth signals, bias direction, and narrative framing so you can compare how outlets shape the same topic."), /* @__PURE__ */ import_react36.default.createElement("form", { className: "search-form", onSubmit }, /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "hero", id: "search-anchor" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "NewsLens editorial intelligence"), /* @__PURE__ */ import_react36.default.createElement("h1", null, "Read the same story through every bias line."), /* @__PURE__ */ import_react36.default.createElement("p", { className: "lede" }, "NewsLens maps truth signals, bias direction, and narrative framing so you can compare how outlets shape the same topic."), /* @__PURE__ */ import_react36.default.createElement("form", { className: "search-form", onSubmit }, /* @__PURE__ */ import_react36.default.createElement(
     "input",
     {
       ref: searchRef,
@@ -60927,7 +60960,16 @@ function Hero({
       value: searchInput,
       onChange: (event) => setSearchInput(event.target.value)
     }
-  ), /* @__PURE__ */ import_react36.default.createElement("button", { className: "search-btn", type: "submit" }, "Analyze")), isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error" }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row" }, history.map((item) => /* @__PURE__ */ import_react36.default.createElement("button", { key: item, className: "history-chip", onClick: () => runSearch(item) }, item))));
+  ), /* @__PURE__ */ import_react36.default.createElement("button", { className: "search-btn", type: "submit" }, "Analyze")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label" }, "Suggested topics"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row" }, SUGGESTED_TOPICS.map((label) => /* @__PURE__ */ import_react36.default.createElement(
+    "button",
+    {
+      key: label,
+      type: "button",
+      className: "suggestion-tag",
+      onClick: () => runSearch(label)
+    },
+    label
+  )))), isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error" }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row" }, history.map((item) => /* @__PURE__ */ import_react36.default.createElement("button", { key: item, className: "history-chip", onClick: () => runSearch(item) }, item))));
 }
 function App() {
   const [searchInput, setSearchInput] = (0, import_react36.useState)("");
@@ -60976,9 +61018,21 @@ function App() {
     event.preventDefault();
     runSearch(searchInput);
   };
+  const focusSearchArea = () => {
+    document.getElementById("search-anchor")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = searchRef.current;
+        el?.focus();
+        el?.select?.();
+      }, 320);
+    });
+  };
   const handleStartAnalysis = () => {
-    searchRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    setTimeout(() => searchRef.current?.focus(), 300);
+    focusSearchArea();
+  };
+  const handleTryBroaderSearch = () => {
+    focusSearchArea();
   };
   const handleCompareClick = (source) => {
     setCompareSelection((prev) => {
@@ -61037,7 +61091,9 @@ function App() {
       shareCardRef,
       onShare: handleShare,
       shareBusy,
-      shareError
+      shareError,
+      spectrumFetching: query.isFetching,
+      onTryBroaderSearch: handleTryBroaderSearch
     }
   )) : null);
 }
