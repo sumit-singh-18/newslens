@@ -357,6 +357,18 @@ This file tracks all major development progress, decisions, challenges, and solu
 - **`PYTHONPATH=. python3 -m pytest backend/tests -q`**: pass. **`npm run build`** in **`frontend/`** refreshes **`bundle.js`**.
 - Example local check on **`us-iran war`** after a fresh fetch: **5** outlets, non-empty **`framing_summary`**, mixed **`bias_distribution`** (e.g. Bloomberg **Left**, Al Jazeera **Right**, others **Center** from blended axis).
 
+## [2026-05-04] - Missing Angle: Gemini-native dual-tier (Pro → Flash)
+
+### What changed
+- **`backend/llm_analyzer.py`**: Anthropic/Claude was already absent from code; Missing Angle is explicitly **Gemini-only**. **Tier 1** uses **`GEMINI_PRO_MODEL`** (default **`gemini-2.5-pro`**) at **`temperature=0.45`**. **Tier 2** uses **`GEMINI_FLASH_MODEL`** (default **`gemini-2.5-flash`**) when Tier 1 raises **429 quota/rate** or **5xx-class** errors (**InternalServerError**, **ServiceUnavailable**, **BadGateway**, **GatewayTimeout**, **DeadlineExceeded**, etc.). If **both** tiers raise quota-class errors, the analyzer returns **`missing_angle: null`**, **`analysis_status: "quota_limited"`**, and the safe user message; **`GET /analyze`** exposes **`data.analysis_status`** and adjusts **`missing_angle.reasoning`** when quota-limited.
+- **Logging**: **`Analysis attempted with Gemini Pro -> Result: Success`** or **`Fail (ExceptionName)`**; Flash attempts logged when Pro falls through.
+- **`backend/tests/test_analyze_resilience.py`**: Patches **`_generate_with_gemini`** for deterministic tests; added **Pro 429 → Flash success** coverage; dual-quota asserts **`quota_limited`**.
+- **`.cursor/.rules/004-llm-analyzer.mdc`**: Rewritten for **v2.0** (Pro + Flash, temperatures, quota policy).
+- **`.env.example`**: Documents **`GEMINI_PRO_MODEL`** / **`GEMINI_FLASH_MODEL`** overrides.
+
+### Verification
+- **`PYTHONPATH=. pytest backend/tests/test_analyze_resilience.py -q`**: pass.
+
 ## [2026-05-01] - Missing Angle: Claude → Google Gemini
 
 ### What changed

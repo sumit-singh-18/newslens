@@ -509,7 +509,12 @@ async def analyze_topic(
     )
     if llm_data.get("from_cache"):
         reasoning += " Reused same-day cached analysis."
-    if llm_data.get("error"):
+    if llm_data.get("analysis_status") == "quota_limited":
+        reasoning = (
+            "Gemini Pro and Gemini Flash both hit API quota limits for this request. "
+            "Missing-angle synthesis is temporarily unavailable."
+        )
+    elif llm_data.get("error"):
         reasoning = llm_data.get("error_message") or "Missing-angle reasoning unavailable."
 
     return {
@@ -517,6 +522,7 @@ async def analyze_topic(
         "data": {
             "topic": normalized_topic,
             "status": coverage_status,
+            "analysis_status": llm_data.get("analysis_status"),
             "source_pool": source_pool,
             "fetch": fetch_meta,
             "scoring": {

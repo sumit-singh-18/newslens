@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted, TooManyRequests
+from google.api_core import exceptions as google_api_exceptions
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,29 +31,34 @@ Rules:
 5. Keep each outlet note short and practical.
 """
 
-# Default Flash model (override with GEMINI_MODEL). `gemini-1.5-flash` is often unavailable
-# on current API versions — use `genai.list_models()` to pick a supported id.
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+# Primary / fallback (override via env). Use IDs valid for your Google AI Studio / Vertex project.
+DEFAULT_GEMINI_PRO_MODEL = "gemini-2.5-pro"
+DEFAULT_GEMINI_FLASH_MODEL = "gemini-2.5-flash"
 
-# User-safe copy when Gemini returns 429 / quota exhaustion (matches frontend).
+GEMINI_PRO_TEMPERATURE = 0.45
+GEMINI_FLASH_TEMPERATURE = 0.45
+
+# User-safe copy when quota is exhausted on both tiers (matches frontend tone).
 GEMINI_QUOTA_USER_MESSAGE = (
     "Editorial analysis temporarily unavailable. Check back shortly."
 )
 
 
 class LLMAnalyzer:
-    """Gemini-powered missing-angle analysis with cache and fail-safe fallback."""
+    """Gemini-only missing-angle analysis: Pro (primary) → Flash (fallback on 429/5xx)."""
 
     def __init__(self) -> None:
         self.api_key = os.getenv("GEMINI_API_KEY", "")
-        self._model: Any = None
         if self.api_key and "your_gemini_api_key_here" not in self.api_key:
             genai.configure(api_key=self.api_key)
-            model_name = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
-            self._model = genai.GenerativeModel(
-                model_name,
-                system_instruction=MISSING_ANGLE_SYSTEM_PROMPT,
-            )
+
+    @staticmethod
+    def pro_model_name() -> str:
+        return os.getenv("GEMINI_PRO_MODEL", DEFAULT_GEMINI_PRO_MODEL)
+
+    @staticmethod
+    def flash_model_name() -> str:
+        return os.getenv("GEMINI_FLASH_MODEL", DEFAULT_GEMINI_FLASH_MODEL)
 
     @staticmethod
     def _summarize_to_150_words(text: str) -> str:
@@ -146,8 +151,13 @@ class LLMAnalyzer:
 
     @staticmethod
     def _is_gemini_quota_error(exc: BaseException) -> bool:
-        """Detect rate/quota exhaustion (free tier 429) without treating every error as quota."""
-        if isinstance(exc, (ResourceExhausted, TooManyRequests)):
+        if isinstance(
+            exc,
+            (
+                google_api_exceptions.ResourceExhausted,
+                google_api_exceptions.TooManyRequests,
+            ),
+        ):
             return True
         msg = str(exc).lower()
         if "resource exhausted" in msg or "too many requests" in msg:
@@ -158,18 +168,73 @@ class LLMAnalyzer:
             return True
         return False
 
-    def _quota_exceeded_response(self, normalized_topic: str, outlet_sources: list[str]) -> dict[str, Any]:
-        """Immediate fallback for 429 / quota — no retries, no raw API payload to callers."""
+    @staticmethod
+    def _is_server_error_for_fallback(exc: BaseException) -> bool:
+        """Tier-1 failure modes that trigger an immediate Flash attempt (5xx-class)."""
+        if isinstance(
+            exc,
+            (
+                google_api_exceptions.InternalServerError,
+                google_api_exceptions.ServiceUnavailable,
+                google_api_exceptions.BadGateway,
+                google_api_exceptions.GatewayTimeout,
+                google_api_exceptions.DeadlineExceeded,
+            ),
+        ):
+            return True
+        msg = str(exc).lower()
+        if any(code in msg for code in (" 500", " 502", " 503", " 504")):
+            return True
+        if "internal error" in msg or "unavailable" in msg:
+            return True
+        return False
+
+    def _generate_with_gemini(
+        self, model_name: str, user_prompt: str, temperature: float
+    ) -> Any:
+        """Single call (override in tests if needed)."""
+        model = genai.GenerativeModel(
+            model_name,
+            system_instruction=MISSING_ANGLE_SYSTEM_PROMPT,
+        )
+        return model.generate_content(
+            user_prompt,
+            generation_config=genai.GenerationConfig(
+                max_output_tokens=1000,
+                temperature=temperature,
+            ),
+        )
+
+    def _quota_limited_response(self, normalized_topic: str, outlet_sources: list[str]) -> dict[str, Any]:
         return {
             "success": True,
             "data": {
                 "topic": normalized_topic,
                 "missing_angle": None,
+                "analysis_status": "quota_limited",
                 "confidence": None,
                 "outlet_missing_angles": {s: None for s in outlet_sources},
                 "from_cache": False,
                 "error": True,
                 "error_message": GEMINI_QUOTA_USER_MESSAGE,
+            },
+            "error": None,
+        }
+
+    def _llm_error_response(
+        self, normalized_topic: str, outlet_sources: list[str], message: str
+    ) -> dict[str, Any]:
+        return {
+            "success": True,
+            "data": {
+                "topic": normalized_topic,
+                "missing_angle": None,
+                "analysis_status": None,
+                "confidence": None,
+                "outlet_missing_angles": {s: None for s in outlet_sources},
+                "from_cache": False,
+                "error": True,
+                "error_message": message,
             },
             "error": None,
         }
@@ -182,6 +247,50 @@ class LLMAnalyzer:
         if not isinstance(outlet_missing, dict):
             outlet_missing = {}
         return {source: outlet_missing.get(source) for source in outlet_sources}
+
+    def _persist_and_build_success(
+        self,
+        normalized_topic: str,
+        outlet_sources: list[str],
+        outlet_summaries: list[dict[str, str]],
+        parsed: dict[str, Any],
+        db: Session,
+    ) -> dict[str, Any]:
+        missing_angle = parsed.get("missing_angle")
+        confidence = parsed.get("confidence")
+        outlet_missing_angles = self._normalize_outlet_missing_angles(parsed, outlet_sources)
+
+        db.add(
+            TopicAnalysis(
+                topic=normalized_topic,
+                snapshot_date=self._today_utc_date(),
+                article_count=len(outlet_summaries),
+                missing_angle=missing_angle,
+                llm_summary=json.dumps(
+                    {
+                        "topic": normalized_topic,
+                        "confidence": confidence,
+                        "outlet_missing_angles": outlet_missing_angles,
+                    }
+                ),
+            )
+        )
+        db.commit()
+
+        return {
+            "success": True,
+            "data": {
+                "topic": normalized_topic,
+                "missing_angle": missing_angle,
+                "analysis_status": "ok",
+                "confidence": confidence,
+                "outlet_missing_angles": outlet_missing_angles,
+                "from_cache": False,
+                "error": False,
+                "error_message": None,
+            },
+            "error": None,
+        }
 
     def generate_missing_angle(
         self,
@@ -196,6 +305,7 @@ class LLMAnalyzer:
                 "data": {
                     "topic": "",
                     "missing_angle": None,
+                    "analysis_status": None,
                     "confidence": None,
                     "outlet_missing_angles": {},
                     "from_cache": False,
@@ -222,6 +332,7 @@ class LLMAnalyzer:
                 "data": {
                     "topic": normalized_topic,
                     "missing_angle": cached.missing_angle,
+                    "analysis_status": "ok",
                     "confidence": parsed_summary.get("confidence"),
                     "outlet_missing_angles": self._normalize_outlet_missing_angles(
                         parsed_summary, outlet_sources
@@ -233,12 +344,13 @@ class LLMAnalyzer:
                 "error": None,
             }
 
-        if not self._model:
+        if not self.api_key or "your_gemini_api_key_here" in self.api_key:
             return {
                 "success": False,
                 "data": {
                     "topic": normalized_topic,
                     "missing_angle": None,
+                    "analysis_status": None,
                     "confidence": None,
                     "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
@@ -263,6 +375,7 @@ class LLMAnalyzer:
                 "data": {
                     "topic": normalized_topic,
                     "missing_angle": None,
+                    "analysis_status": None,
                     "confidence": None,
                     "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
@@ -277,6 +390,7 @@ class LLMAnalyzer:
                 "data": {
                     "topic": normalized_topic,
                     "missing_angle": None,
+                    "analysis_status": None,
                     "confidence": None,
                     "outlet_missing_angles": {s: None for s in outlet_sources},
                     "from_cache": False,
@@ -288,79 +402,73 @@ class LLMAnalyzer:
                 "error": None,
             }
 
+        user_prompt = self._build_user_prompt(
+            normalized_topic, outlet_summaries, outlet_sources
+        )
+        pro_name = self.pro_model_name()
+        flash_name = self.flash_model_name()
+
+        response = None
+        pro_exc: BaseException | None = None
         try:
             logger.info(
-                "Calling Gemini for missing angle with %d outlet summaries (topic=%r)",
-                len(outlet_summaries),
-                normalized_topic,
+                "Analysis attempted with Gemini Pro -> invoking model=%s",
+                pro_name,
             )
-            user_prompt = self._build_user_prompt(
-                normalized_topic, outlet_summaries, outlet_sources
+            response = self._generate_with_gemini(
+                pro_name, user_prompt, GEMINI_PRO_TEMPERATURE
             )
-            response = self._model.generate_content(
-                user_prompt,
-                generation_config=genai.GenerationConfig(
-                    max_output_tokens=1000,
-                    temperature=0.7,
-                ),
+            logger.info("Analysis attempted with Gemini Pro -> Result: Success")
+        except Exception as exc:
+            pro_exc = exc
+            logger.info(
+                "Analysis attempted with Gemini Pro -> Result: Fail (%s)",
+                type(exc).__name__,
             )
+            allow_flash = self._is_gemini_quota_error(exc) or self._is_server_error_for_fallback(
+                exc
+            )
+            if not allow_flash:
+                traceback.print_exc()
+                return self._llm_error_response(
+                    normalized_topic, outlet_sources, str(exc)
+                )
+            try:
+                logger.info(
+                    "Gemini Pro failed (%s); attempting Gemini Flash (model=%s)",
+                    type(exc).__name__,
+                    flash_name,
+                )
+                response = self._generate_with_gemini(
+                    flash_name, user_prompt, GEMINI_FLASH_TEMPERATURE
+                )
+                logger.info("Gemini Flash fallback -> Result: Success")
+            except Exception as exc2:
+                logger.warning(
+                    "Gemini Flash fallback -> Result: Fail (%s)",
+                    type(exc2).__name__,
+                )
+                pro_q = pro_exc is not None and self._is_gemini_quota_error(pro_exc)
+                flash_q = self._is_gemini_quota_error(exc2)
+                if pro_q and flash_q:
+                    logger.warning(
+                        "Both Gemini Pro and Flash returned quota-class errors; analysis_status=quota_limited"
+                    )
+                    return self._quota_limited_response(normalized_topic, outlet_sources)
+                traceback.print_exc()
+                return self._llm_error_response(
+                    normalized_topic, outlet_sources, str(exc2)
+                )
+
+        try:
             content_text = self._extract_gemini_text(response)
             parsed = self._safe_parse_json(content_text)
-            missing_angle = parsed.get("missing_angle")
-            confidence = parsed.get("confidence")
-            outlet_missing_angles = self._normalize_outlet_missing_angles(parsed, outlet_sources)
-
-            db.add(
-                TopicAnalysis(
-                    topic=normalized_topic,
-                    snapshot_date=self._today_utc_date(),
-                    article_count=len(outlet_summaries),
-                    missing_angle=missing_angle,
-                    llm_summary=json.dumps(
-                        {
-                            "topic": normalized_topic,
-                            "confidence": confidence,
-                            "outlet_missing_angles": outlet_missing_angles,
-                        }
-                    ),
-                )
+            return self._persist_and_build_success(
+                normalized_topic, outlet_sources, outlet_summaries, parsed, db
             )
-            db.commit()
-
-            return {
-                "success": True,
-                "data": {
-                    "topic": normalized_topic,
-                    "missing_angle": missing_angle,
-                    "confidence": confidence,
-                    "outlet_missing_angles": outlet_missing_angles,
-                    "from_cache": False,
-                    "error": False,
-                    "error_message": None,
-                },
-                "error": None,
-            }
-        except (ResourceExhausted, TooManyRequests) as exc:
-            logger.warning(
-                "Gemini quota or rate limit (429-class): %s",
-                exc,
-            )
-            return self._quota_exceeded_response(normalized_topic, outlet_sources)
         except Exception as exc:
-            if self._is_gemini_quota_error(exc):
-                logger.warning("Gemini quota-like error: %s", exc)
-                return self._quota_exceeded_response(normalized_topic, outlet_sources)
+            logger.warning("Failed to parse or persist Gemini JSON: %s", exc)
             traceback.print_exc()
-            return {
-                "success": True,
-                "data": {
-                    "topic": normalized_topic,
-                    "missing_angle": None,
-                    "confidence": None,
-                    "outlet_missing_angles": {s: None for s in outlet_sources},
-                    "from_cache": False,
-                    "error": True,
-                    "error_message": str(exc),
-                },
-                "error": None,
-            }
+            return self._llm_error_response(
+                normalized_topic, outlet_sources, str(exc)
+            )

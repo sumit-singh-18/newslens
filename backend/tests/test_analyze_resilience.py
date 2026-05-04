@@ -69,13 +69,16 @@ def test_llm_analyzer_quota_returns_safe_message_no_raw_payload(test_db_session:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     analyzer = LLMAnalyzer()
-    mock_model = MagicMock()
-    mock_model.generate_content.side_effect = ResourceExhausted("fake quota detail")
-    analyzer._model = mock_model
+
+    def _both_quota(self, model_name, user_prompt, temperature):
+        raise ResourceExhausted("fake quota detail")
+
+    monkeypatch.setattr(LLMAnalyzer, "_generate_with_gemini", _both_quota)
     result = analyzer.generate_missing_angle(topic, test_db_session)
 
     assert result["success"] is True
     assert result["data"]["missing_angle"] is None
+    assert result["data"]["analysis_status"] == "quota_limited"
     assert result["data"]["error"] is True
     assert result["data"]["error_message"] == GEMINI_QUOTA_USER_MESSAGE
     assert "{" not in (result["data"].get("error_message") or "")
@@ -87,9 +90,13 @@ def test_llm_analyzer_returns_fallback_on_gemini_failure(test_db_session: Sessio
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     analyzer = LLMAnalyzer()
-    mock_model = MagicMock()
-    mock_model.generate_content.side_effect = RuntimeError("boom")
-    analyzer._model = mock_model
+
+    def _pro_then_boom(self, model_name, user_prompt, temperature):
+        if "pro" in model_name.lower() or self.pro_model_name() == model_name:
+            raise RuntimeError("boom")
+        raise AssertionError("should not reach flash without fallback-worthy pro error")
+
+    monkeypatch.setattr(LLMAnalyzer, "_generate_with_gemini", _pro_then_boom)
     result = analyzer.generate_missing_angle(topic, test_db_session)
 
     assert result["success"] is True
@@ -97,6 +104,35 @@ def test_llm_analyzer_returns_fallback_on_gemini_failure(test_db_session: Sessio
     assert result["data"]["missing_angle"] is None
     assert result["data"]["error"] is True
     assert "boom" in result["data"]["error_message"]
+
+
+def test_llm_pro_429_then_flash_succeeds(test_db_session: Session, monkeypatch):
+    topic = "climate change"
+    _seed_articles_with_scores(test_db_session, topic)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    calls = []
+
+    def _pro_quota_flash_ok(self, model_name, user_prompt, temperature):
+        calls.append(model_name)
+        if len(calls) == 1:
+            raise ResourceExhausted("quota")
+        mock_resp = MagicMock()
+        mock_resp.text = (
+            '{"missing_angle": "Test angle", "confidence": "high", '
+            '"outlet_missing_angles": {"BBC News": "n1", "CNN": "n2", "Fox News": "n3", "Reuters": "n4"}}'
+        )
+        return mock_resp
+
+    monkeypatch.setattr(LLMAnalyzer, "_generate_with_gemini", _pro_quota_flash_ok)
+    analyzer = LLMAnalyzer()
+    result = analyzer.generate_missing_angle(topic, test_db_session)
+
+    assert result["success"] is True
+    assert result["data"]["missing_angle"] == "Test angle"
+    assert result["data"]["analysis_status"] == "ok"
+    assert result["data"]["error"] is False
+    assert len(calls) == 2
 
 
 def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monkeypatch):
