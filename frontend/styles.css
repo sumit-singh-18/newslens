@@ -200,13 +200,13 @@ h1 {
   cursor: pointer;
   color: #374151;
   background: #e5e7eb;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .suggestion-tag:hover {
   background: #d1d5db;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
 }
 
 .suggestion-tag:focus-visible {
@@ -583,10 +583,12 @@ h1 {
   gap: 16px;
   padding: 16px 24px;
   border-radius: 24px;
-  background: rgba(251, 191, 36, 0.14);
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 8px 32px rgba(245, 158, 11, 0.1);
+  background: linear-gradient(rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0.12)), rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 0 0 1px rgba(245, 158, 11, 0.2),
+    0 8px 32px rgba(245, 158, 11, 0.08),
+    0 10px 30px rgba(0, 0, 0, 0.05);
 }
 
 .developing-pulse-icon {
@@ -650,8 +652,6 @@ h1 {
 
 .insufficient-coverage-card {
   padding: 24px;
-  border: 1px solid #e5e7eb;
-  background: rgba(255, 255, 255, 0.92);
 }
 
 .insufficient-coverage-title {
@@ -672,7 +672,7 @@ h1 {
   margin-top: 16px;
   border: none;
   border-radius: 999px;
-  padding: 10px 20px;
+  padding: 8px 24px;
   font-family: inherit;
   font-weight: 700;
   font-size: 0.78rem;
@@ -716,7 +716,7 @@ h2 {
 }
 
 .outlet-spectrum-visual {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .spectrum-gradient-bar {
