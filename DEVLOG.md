@@ -215,6 +215,14 @@ This file tracks all major development progress, decisions, challenges, and solu
 ### Status
 - Phase 4b features are implemented end-to-end; rebuild `frontend/bundle.js` after editing `frontend/app.js` with `frontend/esbuild` or project-local `esbuild` (`npm run build` when Node is available).
 
+### Phase 4c (verified): Deep visual polish and chart readability
+- **Recharts** (`SentimentDistribution`, `Timeline`, `TopicTrendChart`): shared bottom **`margin`** so angled ticks fit; **X-axis labels rotated −45°** with end anchoring; date ticks and tooltip labels formatted as **`MMM DD`** (e.g. `May 04`) via `formatChartAxisDate` / `chartTooltipLabelFormatter`; outlet bar chart uses the same rotation for long outlet names.
+- **Glass cards**: global **`.card`** treatment updated to **`rgba(255,255,255,0.6)`**, **`backdrop-filter: blur(16px) saturate(180%)`**, frosted **border**, and **`box-shadow: 0 8px 32px 0 rgba(31,38,135,0.07)`** with strict **`24px`** radius; aligned **search input**, **headline items**, **share PNG capture**, **coverage shortfall**, **missing-angle**, and **developing banner** with the same tier (banner keeps an amber wash).
+- **Suggested topics**: **`gap: 12px`**, centered wrap; pill **hover** uses **`translateY(-2px)`** and **`brightness(1.05)`**.
+- **Outlet grid**: **`repeat(auto-fit, minmax(320px, 1fr))`** for responsive columns; removed the breakpoint that forced a single column so **`auto-fit`** can surface multiple columns when space allows.
+- **Outlet metrics**: label column **`0.75rem`** / **`#666`**; values stay **bold** / **`var(--ink)`**.
+- Rebuilt **`frontend/bundle.js`** with **`npm run build`** after `app.js` edits.
+
 ### Phase 4b follow-up (verified): Confidence UI and query suggestions
 - **Coverage status** from `GET /analyze` (`high` / `developing` / `insufficient`) is normalized in the dashboard state and drives UI: an amber glass **developing story** banner (with pulse indicator) above the results stack, and an **insufficient coverage** card with a **Try a broader search** control that returns focus to the hero search.
 - **Suggested topics** appear as uppercase pill tags under the search field (aligned with outlet bias pill styling); choosing one fills the query and runs the same **Analyze** path as manual submit.

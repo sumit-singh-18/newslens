@@ -6,8 +6,9 @@
   --ink: #111827;
   --muted: #6b7280;
   --surface: #ffffff;
-  --card-bg: rgba(255, 255, 255, 0.7);
-  --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  --card-bg: rgba(255, 255, 255, 0.6);
+  --card-border: 1px solid rgba(255, 255, 255, 0.3);
+  --card-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 * {
@@ -127,12 +128,12 @@ h1 {
 }
 
 .search-input {
-  border: none;
+  border: var(--card-border);
   border-radius: 24px;
   padding: 16px 16px;
   font-size: 1rem;
   background: var(--card-bg);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px) saturate(180%);
   box-shadow: var(--card-shadow);
 }
 
@@ -184,7 +185,7 @@ h1 {
 .suggested-topics-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   justify-content: center;
 }
 
@@ -201,12 +202,18 @@ h1 {
   color: #374151;
   background: #e5e7eb;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease,
+    filter 0.15s ease;
 }
 
 .suggestion-tag:hover {
   background: #d1d5db;
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+  filter: brightness(1.05);
 }
 
 .suggestion-tag:focus-visible {
@@ -285,9 +292,11 @@ h1 {
 .share-card-capture {
   width: 400px;
   padding: 32px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 24px;
-  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
   text-align: left;
 }
 
@@ -556,18 +565,22 @@ h1 {
 }
 
 .card {
-  background: var(--card-bg);
-  border: none;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 24px;
-  backdrop-filter: blur(12px);
-  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 .coverage-shortfall {
   padding: 24px 28px;
   margin-bottom: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-left: 4px solid #6366f1;
-  background: rgba(238, 242, 255, 0.95);
+  border-radius: 24px;
+  background: linear-gradient(to right, rgba(238, 242, 255, 0.5), rgba(255, 255, 255, 0.35)), rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 .coverage-shortfall-msg {
@@ -583,12 +596,12 @@ h1 {
   gap: 16px;
   padding: 16px 24px;
   border-radius: 24px;
-  background: linear-gradient(rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0.12)), rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: linear-gradient(rgba(251, 191, 36, 0.14), rgba(251, 191, 36, 0.14)), rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px) saturate(180%);
   box-shadow:
-    0 0 0 1px rgba(245, 158, 11, 0.2),
-    0 8px 32px rgba(245, 158, 11, 0.08),
-    0 10px 30px rgba(0, 0, 0, 0.05);
+    0 0 0 1px rgba(245, 158, 11, 0.18),
+    0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 .developing-pulse-icon {
@@ -845,14 +858,14 @@ h2 {
 }
 
 .spectrum-articles-footnote {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-size: 0.76rem;
   color: var(--muted);
 }
 
 .outlets-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 16px;
 }
 
@@ -889,10 +902,21 @@ h3 {
 .metric-row {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 0.86rem;
-  color: #475569;
+  align-items: baseline;
+  gap: 8px;
   padding-top: 8px;
+}
+
+.metric-row > span {
+  font-size: 0.75rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.metric-row > strong {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .headlines {
@@ -905,12 +929,12 @@ h3 {
 }
 
 .headline-item {
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 24px;
   padding: 16px 24px;
-  background: rgba(252, 252, 255, 0.72);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 .headline-source {
@@ -949,7 +973,11 @@ h3 {
 
 .missing-angle {
   padding: 32px;
-  background: linear-gradient(155deg, #ffffff 12%, #eef4ff 100%);
+  background: linear-gradient(155deg, rgba(238, 244, 255, 0.45) 12%, rgba(255, 255, 255, 0.2) 100%),
+    rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 .missing-angle > p {
@@ -1012,7 +1040,6 @@ h3 {
 }
 
 @media (max-width: 1024px) {
-  .outlets-grid,
   .chart-grid,
   .skeleton-grid {
     grid-template-columns: 1fr;

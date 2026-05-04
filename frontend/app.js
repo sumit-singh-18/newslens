@@ -57,6 +57,42 @@ function normalizeCoverageStatus(raw) {
   return COVERAGE_STATUS.HIGH;
 }
 
+/** Recharts margin so rotated X-axis labels are not clipped */
+const CHART_MARGIN_BOTTOM = { bottom: 30 };
+
+const CHART_DATE_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function formatChartAxisDate(value) {
+  if (value == null || value === "") return "";
+  const s = String(value).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(mo) || mo < 1 || mo > 12 || !Number.isFinite(d)) return s;
+  return `${CHART_DATE_MONTHS[mo - 1]} ${String(d).padStart(2, "0")}`;
+}
+
+function chartTooltipLabelFormatter(value) {
+  if (value == null || value === "") return "";
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return formatChartAxisDate(s);
+  return s;
+}
+
 /** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
 const MISSING_ANGLE_UNAVAILABLE_COPY =
   "Editorial analysis temporarily unavailable. Check back shortly.";
@@ -860,11 +896,18 @@ function SentimentDistribution({ outlets }) {
       </div>
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={data}>
+          <BarChart data={data} margin={CHART_MARGIN_BOTTOM}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-            <XAxis dataKey="outlet" />
+            <XAxis
+              dataKey="outlet"
+              angle={-45}
+              textAnchor="end"
+              height={56}
+              interval={0}
+              tick={{ fontSize: 11 }}
+            />
             <YAxis allowDecimals={false} />
-            <Tooltip />
+            <Tooltip labelFormatter={chartTooltipLabelFormatter} />
             <Legend />
             <Bar dataKey="positive" fill="#10B981" radius={[6, 6, 0, 0]} />
             <Bar dataKey="neutral" fill="#9CA3AF" radius={[6, 6, 0, 0]} />
@@ -898,11 +941,18 @@ function Timeline({ timeline, outlets }) {
       </div>
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={rows}>
+          <LineChart data={rows} margin={CHART_MARGIN_BOTTOM}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-            <XAxis dataKey="date" />
+            <XAxis
+              dataKey="date"
+              angle={-45}
+              textAnchor="end"
+              height={56}
+              tickFormatter={formatChartAxisDate}
+              tick={{ fontSize: 11 }}
+            />
             <YAxis domain={[-1, 1]} />
-            <Tooltip />
+            <Tooltip labelFormatter={chartTooltipLabelFormatter} />
             <Legend />
             {activeOutlets.map((outlet) => (
               <Line
@@ -945,11 +995,18 @@ function TopicTrendChart({ topic, outlets }) {
       {q.isSuccess ? (
         <div className="chart-wrap chart-wrap-tall">
           <ResponsiveContainer width="100%" height={360}>
-            <AreaChart data={series}>
+            <AreaChart data={series} margin={CHART_MARGIN_BOTTOM}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis dataKey="date" />
+              <XAxis
+                dataKey="date"
+                angle={-45}
+                textAnchor="end"
+                height={56}
+                tickFormatter={formatChartAxisDate}
+                tick={{ fontSize: 11 }}
+              />
               <YAxis allowDecimals={false} />
-              <Tooltip />
+              <Tooltip labelFormatter={chartTooltipLabelFormatter} />
               <Legend />
               {activeOutlets.map((outlet) => (
                 <Area
