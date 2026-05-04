@@ -57,8 +57,23 @@ function normalizeCoverageStatus(raw) {
   return COVERAGE_STATUS.HIGH;
 }
 
-/** Recharts margin so rotated X-axis labels are not clipped */
-const CHART_MARGIN_BOTTOM = { bottom: 30 };
+/** Bottom margin for rotated X ticks; right reserved for vertical outlet legend */
+const CHART_MARGIN_RIGHT_LEGEND = { top: 8, right: 168, bottom: 30, left: 8 };
+
+/** Sentiment chart: room for angled outlet ticks + bottom-centered legend (8px grid) */
+const CHART_MARGIN_SENTIMENT = { top: 8, right: 8, bottom: 56, left: 8 };
+
+const LEGEND_RIGHT_STYLE = { paddingLeft: "20px", fontSize: "11px", maxWidth: "150px" };
+
+const LEGEND_SENTIMENT_STYLE = {
+  paddingTop: "8px",
+  fontSize: "11px",
+  width: "100%",
+  display: "flex",
+  justifyContent: "center",
+  gap: "8px",
+  flexWrap: "wrap",
+};
 
 const CHART_DATE_MONTHS = [
   "Jan",
@@ -92,6 +107,34 @@ function chartTooltipLabelFormatter(value) {
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return formatChartAxisDate(s);
   return s;
 }
+
+/** Timeline: legend/lines only for outlets with ≥1 finite bias point in `rows`. */
+function outletsWithTimelineSeriesData(rows, outletSources) {
+  const list = Array.isArray(rows) ? rows : [];
+  const uniq = [...new Set(outletSources)];
+  return uniq.filter((src) =>
+    list.some((row) => {
+      if (!row || typeof row !== "object") return false;
+      const v = row[src];
+      return v != null && Number.isFinite(Number(v));
+    })
+  );
+}
+
+/** Coverage volume: legend/areas only where some day has count > 0. */
+function outletsWithVolumeSeriesData(rows, outletSources) {
+  const list = Array.isArray(rows) ? rows : [];
+  const uniq = [...new Set(outletSources)];
+  return uniq.filter((src) =>
+    list.some((row) => {
+      if (!row || typeof row !== "object") return false;
+      const v = Number(row[src]);
+      return Number.isFinite(v) && v > 0;
+    })
+  );
+}
+
+const CHART_X_TICK = { fontSize: 10 };
 
 /** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
 const MISSING_ANGLE_UNAVAILABLE_COPY =
@@ -879,12 +922,14 @@ function HeadlineComparison({ outlets }) {
 function SentimentDistribution({ outlets }) {
   const data = useMemo(
     () =>
-      (outlets || []).map((outlet) => ({
-        outlet: outlet.source || "Unknown",
-        positive: sentimentBucket(outlet.sentiment_labels, ["Positive", "positive"]),
-        neutral: sentimentBucket(outlet.sentiment_labels, ["Neutral", "neutral"]),
-        negative: sentimentBucket(outlet.sentiment_labels, ["Negative", "negative"]),
-      })),
+      (outlets || [])
+        .filter((outlet) => (outlet.article_count || 0) > 0)
+        .map((outlet) => ({
+          outlet: outlet.source || "Unknown",
+          positive: sentimentBucket(outlet.sentiment_labels, ["Positive", "positive"]),
+          neutral: sentimentBucket(outlet.sentiment_labels, ["Neutral", "neutral"]),
+          negative: sentimentBucket(outlet.sentiment_labels, ["Negative", "negative"]),
+        })),
     [outlets]
   );
 
@@ -895,20 +940,21 @@ function SentimentDistribution({ outlets }) {
         <span>Positive / neutral / negative by outlet</span>
       </div>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={data} margin={CHART_MARGIN_BOTTOM}>
+        <ResponsiveContainer width="100%" aspect={2.2}>
+          <BarChart data={data} margin={CHART_MARGIN_SENTIMENT} barCategoryGap="30%">
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="outlet"
               angle={-45}
               textAnchor="end"
-              height={56}
-              interval={0}
-              tick={{ fontSize: 11 }}
+              height={60}
+              interval="preserveStartEnd"
+              minTickGap={20}
+              tick={CHART_X_TICK}
             />
-            <YAxis allowDecimals={false} />
+            <YAxis tick={CHART_X_TICK} allowDecimals={false} />
             <Tooltip labelFormatter={chartTooltipLabelFormatter} />
-            <Legend />
+            <Legend verticalAlign="bottom" align="center" layout="horizontal" wrapperStyle={LEGEND_SENTIMENT_STYLE} />
             <Bar dataKey="positive" fill="#10B981" radius={[6, 6, 0, 0]} />
             <Bar dataKey="neutral" fill="#9CA3AF" radius={[6, 6, 0, 0]} />
             <Bar dataKey="negative" fill="#EF4444" radius={[6, 6, 0, 0]} />
@@ -922,6 +968,12 @@ function SentimentDistribution({ outlets }) {
 function Timeline({ timeline, outlets }) {
   const rows = Array.isArray(timeline) ? timeline : [];
   const activeOutlets = (outlets || []).filter((outlet) => (outlet.article_count || 0) > 0);
+  const lineSources = useMemo(() => {
+    const sources = (outlets || [])
+      .filter((o) => (o.article_count || 0) > 0)
+      .map((o) => o.source);
+    return outletsWithTimelineSeriesData(rows, sources);
+  }, [rows, outlets]);
   if (!rows.length) {
     return (
       <section className="card chart-card">
@@ -940,26 +992,33 @@ function Timeline({ timeline, outlets }) {
         <span>Bias score trend over the last 7 days</span>
       </div>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={rows} margin={CHART_MARGIN_BOTTOM}>
+        <ResponsiveContainer width="100%" aspect={2.2}>
+          <LineChart data={rows} margin={CHART_MARGIN_RIGHT_LEGEND}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="date"
               angle={-45}
               textAnchor="end"
-              height={56}
+              height={60}
+              interval="preserveStartEnd"
+              minTickGap={20}
               tickFormatter={formatChartAxisDate}
-              tick={{ fontSize: 11 }}
+              tick={CHART_X_TICK}
             />
-            <YAxis domain={[-1, 1]} />
+            <YAxis domain={[-1, 1]} tick={CHART_X_TICK} />
             <Tooltip labelFormatter={chartTooltipLabelFormatter} />
-            <Legend />
-            {activeOutlets.map((outlet) => (
+            <Legend
+              layout="vertical"
+              align="right"
+              verticalAlign="middle"
+              wrapperStyle={LEGEND_RIGHT_STYLE}
+            />
+            {lineSources.map((source) => (
               <Line
-                key={outlet.source}
+                key={source}
                 type="monotone"
-                dataKey={outlet.source}
-                stroke={OUTLET_COLORS[outlet.source] || "#111827"}
+                dataKey={source}
+                stroke={OUTLET_COLORS[source] || "#111827"}
                 strokeWidth={2.2}
                 dot={{ r: 3 }}
                 connectNulls
@@ -983,9 +1042,14 @@ function TopicTrendChart({ topic, outlets }) {
   });
 
   const series = q.data?.series || [];
+  const areaSources = useMemo(() => {
+    const list = Array.isArray(outlets) ? outlets : [];
+    const sources = list.filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
+    return outletsWithVolumeSeriesData(series, sources);
+  }, [series, outlets]);
 
   return (
-    <section className="card chart-card topic-trend-card">
+    <section className="card chart-card">
       <div className="section-head">
         <h2>Topic coverage by outlet</h2>
         <span>Article volume per outlet over the last 7 days</span>
@@ -993,29 +1057,36 @@ function TopicTrendChart({ topic, outlets }) {
       {q.isLoading ? <p className="chart-status">Loading trend data…</p> : null}
       {q.isError ? <p className="chart-status error">Could not load trend: {q.error?.message}</p> : null}
       {q.isSuccess ? (
-        <div className="chart-wrap chart-wrap-tall">
-          <ResponsiveContainer width="100%" height={360}>
-            <AreaChart data={series} margin={CHART_MARGIN_BOTTOM}>
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" aspect={2.2}>
+            <AreaChart data={series} margin={CHART_MARGIN_RIGHT_LEGEND}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis
                 dataKey="date"
                 angle={-45}
                 textAnchor="end"
-                height={56}
+                height={60}
+                interval="preserveStartEnd"
+                minTickGap={20}
                 tickFormatter={formatChartAxisDate}
-                tick={{ fontSize: 11 }}
+                tick={CHART_X_TICK}
               />
-              <YAxis allowDecimals={false} />
+              <YAxis allowDecimals={false} tick={CHART_X_TICK} />
               <Tooltip labelFormatter={chartTooltipLabelFormatter} />
-              <Legend />
-              {activeOutlets.map((outlet) => (
+              <Legend
+                layout="vertical"
+                align="right"
+                verticalAlign="middle"
+                wrapperStyle={LEGEND_RIGHT_STYLE}
+              />
+              {areaSources.map((source) => (
                 <Area
-                  key={outlet.source}
+                  key={source}
                   type="monotone"
-                  dataKey={outlet.source}
+                  dataKey={source}
                   stackId="topic-volume"
-                  stroke={OUTLET_COLORS[outlet.source] || "#111827"}
-                  fill={OUTLET_COLORS[outlet.source] || "#111827"}
+                  stroke={OUTLET_COLORS[source] || "#111827"}
+                  fill={OUTLET_COLORS[source] || "#111827"}
                   fillOpacity={0.55}
                 />
               ))}
