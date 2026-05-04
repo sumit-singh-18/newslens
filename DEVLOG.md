@@ -482,3 +482,15 @@ Stale newsletter rows lingered in **`articles`** after the first digest filter; 
 
 ### Verification
 - Backend restarted after truncate (**`uvicorn`** on port **8000**).
+
+## [2026-05-04] - Balanced topic + newsletter quality filters
+
+### What changed
+- **`backend/news_fetcher.py`**: Ingestion stores a separate **`description`** for each item. Topic relevance uses the same **≥4-character** words from the query matched against **title**, **description**, or the **first 200 characters** of **content** (not title-only). Max article length raised **8000 → 15000**. Newsletter substring filter reduced to **`newsletter`**, **`roundup`**, **`digest`**, **`briefing`**, **`this week`**, **`top stories`** — if any appear in the title, the article is **kept** when a topic keyword appears in title/description/body head (**exception**). Removed the older long marker list and multi-`and` clause rule. If after the **strict** pass there are **fewer than 3** articles **across all outlets**, the fetcher **re-runs** from a snapshot with **newsletter-only** filtering and logs **`Relaxed content filter due to low article count`**.
+
+### Reason
+Niche queries (e.g. **digital warfare**) were over-pruned; long-form pieces and body-only keyword hits were lost. **Trade war**-style cases should still drop obvious digests when the full filter applies.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
+- **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.

@@ -353,76 +353,113 @@ def relax_search_query(topic: str) -> str:
 
 _TITLE_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?")
 
-# Morning digests / newsletters — substring match on lowercased title (case-insensitive).
-_DIGEST_TITLE_MARKERS: tuple[str, ...] = (
+# Substrings in the title; if present, article is dropped unless a topic keyword appears
+# in title, description, or the first 200 characters of content.
+_NEWSLETTER_TITLE_MARKERS: tuple[str, ...] = (
     "newsletter",
     "roundup",
-    "morning rundown",
-    "morning",
     "digest",
-    "weekly",
     "briefing",
-    "wrap",
-    "rundown",
-    "recap",
     "this week",
-    "today's",
     "top stories",
-    "fly-by",
-    "nears and",
-    "ceasefire deadline nears",
 )
 
-_MAX_ARTICLE_BODY_CHARS = 8000
-
-
-def _title_is_multi_clause_roundup(title: str) -> bool:
-    """True when ' and ' joins 3+ segments (multi-story / digest-style headline)."""
-    if not title:
-        return False
-    if re.search(r"\s+and\s+", title, flags=re.IGNORECASE) is None:
-        return False
-    parts = [p.strip() for p in re.split(r"\s+and\s+", title.strip(), flags=re.IGNORECASE) if p.strip()]
-    return len(parts) >= 3
+_CONTENT_HEAD_CHARS = 200
+_MAX_ARTICLE_BODY_CHARS = 15000
+_MIN_ARTICLES_BEFORE_RELAX_FILTER = 3
 
 
 def _topic_tokens_min_len4(topic: str) -> set[str]:
     return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(topic or "") if len(m.group(0)) >= 4}
 
 
-def _title_tokens(title: str) -> set[str]:
-    return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(title or "")}
+def _title_tokens(text: str) -> set[str]:
+    return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(text or "")}
 
 
-def _article_passes_topic_quality_filters(row: dict[str, Any], user_topic: str) -> bool:
-    """Drop newsletter roundups, titles with no query overlap, and oversized digest bodies."""
+def _topic_overlap_anywhere(row: dict[str, Any], user_topic: str) -> bool:
+    """True if a topic word (len >= 4) appears in title, description, or first 200 chars of content."""
+    tokens = _topic_tokens_min_len4(user_topic)
+    if not tokens:
+        return True
     title = row.get("title") or ""
+    desc = row.get("description") or ""
+    content = row.get("content") or ""
+    head = content[:_CONTENT_HEAD_CHARS]
+    combined = f"{title} {desc} {head}"
+    return bool(_title_tokens(combined) & tokens)
+
+
+def _fails_newsletter_title_only(row: dict[str, Any], user_topic: str) -> bool:
+    """Reject when a newsletter marker appears in the title and no topic keyword is present anywhere."""
+    tl = (row.get("title") or "").lower()
+    for marker in _NEWSLETTER_TITLE_MARKERS:
+        if marker in tl:
+            return not _topic_overlap_anywhere(row, user_topic)
+    return False
+
+
+def _article_passes_full_quality(row: dict[str, Any], user_topic: str) -> bool:
+    """Length cap, newsletter rule with exception, and topic keyword overlap in title/desc/head of body."""
     content = row.get("content") or ""
     if len(content) > _MAX_ARTICLE_BODY_CHARS:
         return False
-    tl = title.lower()
-    for marker in _DIGEST_TITLE_MARKERS:
-        if marker in tl:
-            return False
-    if _title_is_multi_clause_roundup(title):
+    if _fails_newsletter_title_only(row, user_topic):
         return False
-    overlap_needed = _topic_tokens_min_len4(user_topic)
-    if overlap_needed:
-        if not (_title_tokens(title) & overlap_needed):
-            return False
+    if not _topic_overlap_anywhere(row, user_topic):
+        return False
     return True
 
 
-def _filter_fetched_articles_for_topic(by_source: dict[str, list[dict[str, Any]]], user_topic: str) -> int:
-    """Remove low-value rows in-place; returns count of dropped articles."""
+def _article_passes_newsletter_only(row: dict[str, Any], user_topic: str) -> bool:
+    """Relaxed pass: only the newsletter title rule (with topic-keyword exception)."""
+    return not _fails_newsletter_title_only(row, user_topic)
+
+
+def _count_articles_in_by_source(by_source: dict[str, list[dict[str, Any]]]) -> int:
+    return sum(len(v) for v in by_source.values())
+
+
+def _apply_row_filter(
+    by_source: dict[str, list[dict[str, Any]]],
+    user_topic: str,
+    *,
+    full: bool,
+) -> int:
+    if full:
+
+        def keep(r: dict[str, Any]) -> bool:
+            return _article_passes_full_quality(r, user_topic)
+
+    else:
+
+        def keep(r: dict[str, Any]) -> bool:
+            return _article_passes_newsletter_only(r, user_topic)
+
     removed = 0
     for src in list(by_source.keys()):
-        kept = [r for r in by_source[src] if _article_passes_topic_quality_filters(r, user_topic)]
+        kept = [r for r in by_source[src] if keep(r)]
         removed += len(by_source[src]) - len(kept)
         if kept:
             by_source[src] = kept
         else:
             del by_source[src]
+    return removed
+
+
+def _filter_fetched_articles_for_topic(by_source: dict[str, list[dict[str, Any]]], user_topic: str) -> int:
+    """Remove low-value rows in-place. If full filtering leaves fewer than 3 articles, relax to newsletter-only."""
+    snapshot = {k: [dict(r) for r in v] for k, v in by_source.items()}
+    removed = _apply_row_filter(by_source, user_topic, full=True)
+    if _count_articles_in_by_source(by_source) < _MIN_ARTICLES_BEFORE_RELAX_FILTER:
+        logger.info(
+            "[NewsLens] Relaxed content filter due to low article count (topic=%r)",
+            user_topic,
+        )
+        by_source.clear()
+        for k, rows in snapshot.items():
+            by_source[k] = [dict(r) for r in rows]
+        removed = _apply_row_filter(by_source, user_topic, full=False)
     return removed
 
 
@@ -470,7 +507,8 @@ def _ingest_articles_into_buckets(
             continue
         url = (item.get("url") or "").strip()
         title = clean_text(item.get("title"))
-        content = clean_text(item.get("content")) or clean_text(item.get("description"))
+        description = clean_text(item.get("description"))
+        content = clean_text(item.get("content")) or description
 
         if not url or url in seen_urls:
             continue
@@ -483,6 +521,7 @@ def _ingest_articles_into_buckets(
                 "source": source_name,
                 "url": url,
                 "title": title,
+                "description": description,
                 "content": content,
                 "published_at_raw": item.get("publishedAt"),
             }
@@ -651,7 +690,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
     _n_dropped = _filter_fetched_articles_for_topic(by_source, topic)
     if _n_dropped:
         logger.info(
-            "[NewsLens] dropped %s newsletter/off-topic/oversized articles before persistence (topic=%r)",
+            "[NewsLens] dropped %s articles in quality filter before persistence (topic=%r)",
             _n_dropped,
             topic,
         )
