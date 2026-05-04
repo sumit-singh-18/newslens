@@ -400,3 +400,16 @@ Dynamic outlet picking pulled low-quality domains (e.g. tabloid / niche sites) v
 - **`PYTHONPATH=. python3 -m pytest backend/tests/test_analyze_resilience.py -q`**: pass.
 - **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.
 - NewsAPI spot-check (**`trade war`**, **`climate policy`**): responses contained **only** allowlisted **`source.id`** values; no stray publishers.
+
+## [2026-05-04] - Categorized vetted sources + query relaxation
+
+### What changed
+- **`backend/news_fetcher.py`**: Replaced the flat 15-ID list with **`VETTED_SOURCES_BY_CATEGORY`** (**GENERAL** 22+, **TECH** 10, **FINANCE** 10, **SCIENCE_HEALTH** 5). **`detect_source_categories_for_query`** always keeps **GENERAL** and adds other pools from keyword sets (e.g. chip/software → **TECH**, market/stock/CBDC → **FINANCE**). NewsAPI **`everything`** calls are **chunked to 20 source IDs** per request (API limit), merged client-side. **Iterative relaxation**: if a fetch pass yields **&lt; 10** articles in the vetted pool, the fetcher retries with **`relax_search_query`** (drop years / filler tokens), then with **all categories** and the relaxed query. Successful runs return **`source_pool`** and **`query_used`** in **`fetch`** metadata.
+- **`backend/main.py`**: **`GET /analyze`** **`data`** now includes **`status`** (**`high`** / **`developing`** / **`insufficient`**) from stored article counts (≥10 / 5–9 / &lt;5) and top-level **`source_pool`** (category keys used for the run). Missing Angle still runs from **`compute_selected_outlets_from_db`** / seeded summaries when coverage exists; thresholds (**≥3** outlet summaries) are unchanged.
+- **`backend/tests/test_news_fetcher_categorization.py`**: Covers category detection, relaxation, and pool sizes. **`test_analyze_resilience`** asserts **`status`** and **`source_pool`**.
+
+### Reason
+Broader, topic-aware sourcing improves recall on tech/finance/science queries while keeping a single credibility-ranked vetted universe; relaxation reduces empty results from over-specific queries without abandoning the allowlist.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.

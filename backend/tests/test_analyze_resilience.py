@@ -119,6 +119,8 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
             "count": 8,
             "saved_urls": [],
             "selected_outlets": ["Reuters", "BBC News", "CNN", "Fox News"],
+            "source_pool": ["GENERAL"],
+            "query_used": topic,
         }
 
     def _fake_generate_missing_angle(self, topic: str, db: Session, outlet_sources=None):
@@ -159,5 +161,7 @@ def test_analyze_endpoint_stays_up_when_llm_fails(test_db_session: Session, monk
     assert payload["data"]["missing_angle"]["error"] is True
     assert "error_message" in payload["data"]["missing_angle"]
     assert len(payload["data"]["outlets"]) == 4
+    assert payload["data"]["status"] == "developing"
+    assert payload["data"]["source_pool"] == ["GENERAL"]
 
     main.app.dependency_overrides.clear()

@@ -30,7 +30,12 @@ _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
 from .database import Article, ArticleScore, TopicOutletFraming, create_tables, get_db
 from .llm_analyzer import LLMAnalyzer
-from .news_fetcher import NewsFetcherError, compute_selected_outlets_from_db, fetch_and_store_articles
+from .news_fetcher import (
+    NewsFetcherError,
+    compute_selected_outlets_from_db,
+    detect_source_categories_for_query,
+    fetch_and_store_articles,
+)
 
 DEFAULT_TOPIC_TREND_DAYS = 7
 DEFAULT_OUTLET_SERIES_DAYS = 14
@@ -79,6 +84,15 @@ def get_nlp_pipeline() -> NLPPipeline:
     if _nlp_pipeline is None:
         return NLPPipeline.get_instance()
     return _nlp_pipeline
+
+
+def _coverage_confidence_status(article_count: int) -> str:
+    """Fetch quality signal from stored article count for this topic."""
+    if article_count >= 10:
+        return "high"
+    if article_count >= 5:
+        return "developing"
+    return "insufficient"
 
 
 def _load_framing_map(topic: str, db: Session) -> dict[str, str]:
@@ -430,7 +444,14 @@ async def analyze_topic(
     if not normalized_topic:
         raise HTTPException(status_code=400, detail="Topic must not be empty.")
 
-    fetch_meta: dict = {"cached": True, "count": 0, "saved_urls": [], "selected_outlets": []}
+    fetch_meta: dict = {
+        "cached": True,
+        "count": 0,
+        "saved_urls": [],
+        "selected_outlets": [],
+        "source_pool": detect_source_categories_for_query(normalized_topic),
+        "query_used": normalized_topic,
+    }
     try:
         # Always run through fetcher so its 24-hour cache policy decides freshness.
         fetch_meta = await fetch_and_store_articles(normalized_topic, db)
@@ -441,6 +462,8 @@ async def analyze_topic(
             "saved_urls": [],
             "selected_outlets": [],
             "warning": str(exc),
+            "source_pool": detect_source_categories_for_query(normalized_topic),
+            "query_used": normalized_topic,
         }
 
     selected: list[str] = list(fetch_meta.get("selected_outlets") or [])
@@ -477,6 +500,9 @@ async def analyze_topic(
     bias_distribution = bias_distribution_from_outlets(score_data["outlets"])
     most_left_outlet, most_right_outlet = extrem_bias_outlets(score_data["outlets"])
 
+    source_pool = list(fetch_meta.get("source_pool") or detect_source_categories_for_query(normalized_topic))
+    coverage_status = _coverage_confidence_status(int(score_result["article_count"]))
+
     reasoning = (
         f"Confidence: {llm_data.get('confidence') or 'unknown'}. "
         f"Computed from multi-outlet article framing and sentiment/bias patterns for topic '{normalized_topic}'."
@@ -490,6 +516,8 @@ async def analyze_topic(
         "success": True,
         "data": {
             "topic": normalized_topic,
+            "status": coverage_status,
+            "source_pool": source_pool,
             "fetch": fetch_meta,
             "scoring": {
                 "article_count": score_result["article_count"],
