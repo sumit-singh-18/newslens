@@ -4,7 +4,7 @@ import os
 from datetime import date, datetime, timezone
 from typing import Any, Generator, Optional
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -46,6 +46,7 @@ class Article(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, default=lambda: datetime.now(timezone.utc).date())
+    relevance_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     scores: Mapped[list["ArticleScore"]] = relationship(back_populates="article", cascade="all, delete-orphan")
 
@@ -110,6 +111,19 @@ class TopicAnalysis(Base):
 
 def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
+    _ensure_article_relevance_column()
+
+
+def _ensure_article_relevance_column() -> None:
+    """SQLite: add relevance_score if DB predates the column."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        rows = conn.execute(text("PRAGMA table_info(articles)")).fetchall()
+        names = {r[1] for r in rows}
+        if "relevance_score" not in names:
+            conn.execute(text("ALTER TABLE articles ADD COLUMN relevance_score INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
 
 
 def get_db() -> Generator[Session, None, None]:

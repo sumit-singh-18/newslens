@@ -89,9 +89,10 @@ def extractive_framing_summary(nlp: Any, corpus: str, k: int = 2) -> str:
 
 
 def build_outlet_corpus_snippets(article_rows: list[dict[str, Any]]) -> str:
-    """title + first 100 words per article, concatenated."""
+    """title + first 100 words per article, concatenated (highest relevance first)."""
+    rows = sorted(article_rows, key=lambda r: -int(r.get("relevance_score") or 0))
     parts: list[str] = []
-    for row in article_rows:
+    for row in rows:
         title = (row.get("title") or "").strip()
         body = (row.get("content") or "").strip()
         snippet = first_n_words(body, 100)
@@ -109,11 +110,13 @@ def fallback_framing_best_article(
     nlp: Any,
     n_sentences: int = 2,
 ) -> str:
-    """First n sentences of the outlet article with highest sentiment charge (full text)."""
+    """First n sentences from the best sentiment-charged piece; rows ordered by relevance_score first."""
     if not rows:
         return ""
+    rows_sorted = sorted(rows, key=lambda r: -int(r.get("relevance_score") or 0))
+    top_title = (rows_sorted[0].get("title") or "").strip()
     stitched: list[str] = []
-    for r in rows:
+    for r in rows_sorted:
         title = (r.get("title") or "").strip()
         body = (r.get("content") or "").strip()
         if title and body:
@@ -123,7 +126,7 @@ def fallback_framing_best_article(
         elif title:
             stitched.append(title)
     if not stitched:
-        return ""
+        return top_title
     analyses = nlp.analyze_batch(stitched)
     best_i = 0
     best_charge = -1.0
@@ -135,7 +138,7 @@ def fallback_framing_best_article(
         if ch > best_charge:
             best_charge = ch
             best_i = i
-    best_row = rows[best_i]
+    best_row = rows_sorted[best_i]
     title = (best_row.get("title") or "").strip()
     body = (best_row.get("content") or "").strip()
     blob = f"{title}. {body}" if title and body else (body or title)
@@ -144,4 +147,6 @@ def fallback_framing_best_article(
         return " ".join(sents[:n_sentences])
     if sents:
         return " ".join(sents)
+    if top_title:
+        return top_title
     return (blob or "")[:1200]

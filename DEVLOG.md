@@ -531,3 +531,21 @@ New topics had no longitudinal rows yet; Recharts rendered empty axes and confus
 
 ### Verification
 - **`npm run build`** in **`frontend/`**: success (`bundle.js` updated).
+
+## [2026-05-04] - Topic relevance scoring for outlets & framing
+
+### What changed
+- **`backend/database.py`**: **`relevance_score`** column on **`articles`** ( **`INTEGER`**, default **0** ); SQLite **`ALTER TABLE`** migration when upgrading existing DBs.
+- **`backend/news_fetcher.py`**: After hygiene filters, each article gets a **0–100** relevance score (**title +40**, **description +30**, **first 300 chars of body +20**, **+10** NewsAPI query/source bonus). Rows must score **≥ 40** and hit **title or description** with topic keywords (same **≥4**-char token set as before, with **≥3**-char fallback). Outlets need **≥ 2** qualifying outlets to persist a fetch; otherwise **`limited_coverage_fetch_meta`** returns the copy *Limited credible coverage found for …* plus **`coverage_suggestions`** ( **`suggest_broader_terms`** ). Stored articles include **`relevance_score`**; **`compute_selected_outlets_from_db`** counts only **`relevance_score ≥ 40`**.
+- **`backend/main.py`**: Outlet aggregation, headlines, bias timeline, and topic-trend queries filter **`Article.relevance_score ≥ MIN_RELEVANCE_SCORE`**.
+- **`backend/framing_extract.py`**: Corpus and fallback framing ordered by **`relevance_score`**; fallback uses the **top-relevance** article title when extraction fails.
+- **`frontend/app.js`**: **`coverage_suggestions`** on normalized payload; **COVERAGE** card with chips that run a new search; full dashboard hidden when that shortfall message is shown.
+- **`backend/tests/`**: **`test_relevance_scoring.py`**; **`test_analyze_resilience`** seeds **`relevance_score`** so LLM tests stay valid.
+
+### Reason
+Post-fetch filtering missed many **NewsAPI** off-topic hits; scoring before persistence keeps outlet cards and framing tied to **on-topic** articles only.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
+- **`npm run build`** in **`frontend/`**: success.
+- Cleared **`articles`** / **`article_scores`** / **`topic_analysis`** / **`topic_outlet_framing`** locally via **`SessionLocal`** script.

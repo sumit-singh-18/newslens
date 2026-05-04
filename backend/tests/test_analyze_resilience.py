@@ -13,6 +13,7 @@ from google.api_core.exceptions import ResourceExhausted
 
 from backend import main
 from backend.database import Article, ArticleScore, Base
+from backend.news_fetcher import MIN_RELEVANCE_SCORE
 from backend import llm_analyzer as llm_analyzer_module
 from backend.llm_analyzer import GEMINI_QUOTA_USER_MESSAGE, LLMAnalyzer
 
@@ -38,6 +39,7 @@ def _seed_articles_with_scores(db: Session, topic: str) -> None:
                 content=f"{source} article content " + "word " * 170,
                 fetched_at=now_utc,
                 snapshot_date=now_utc.date(),
+                relevance_score=MIN_RELEVANCE_SCORE,
             )
             db.add(article)
             db.flush()

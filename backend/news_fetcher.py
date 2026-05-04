@@ -291,9 +291,10 @@ OUTLET_DISPLAY_RANK: dict[str, int] = {
 
 TOP_OUTLET_SLOTS = 5
 MIN_ARTICLES_PER_SOURCE = 1
-MIN_CREDIBLE_OUTLETS = 3
+MIN_RELEVANCE_SCORE = 40
+MIN_RELEVANT_OUTLETS_FOR_FETCH = 2
+RELEVANCE_BODY_PREVIEW_CHARS = 300
 NEWSAPI_PAGE_SIZE = 100
-COVERAGE_SHORTFALL_MESSAGE = "Not enough credible coverage found for this topic yet"
 
 
 class NewsFetcherError(Exception):
@@ -400,15 +401,111 @@ def _fails_newsletter_title_only(row: dict[str, Any], user_topic: str) -> bool:
 
 
 def _article_passes_full_quality(row: dict[str, Any], user_topic: str) -> bool:
-    """Length cap, newsletter rule with exception, and topic keyword overlap in title/desc/head of body."""
+    """Length cap and newsletter rule. Topic fit is enforced via relevance scoring before persistence."""
     content = row.get("content") or ""
     if len(content) > _MAX_ARTICLE_BODY_CHARS:
         return False
     if _fails_newsletter_title_only(row, user_topic):
         return False
-    if not _topic_overlap_anywhere(row, user_topic):
-        return False
     return True
+
+
+def topic_keywords_for_relevance(topic: str) -> set[str]:
+    """Prefer >=4-char tokens; fall back to >=3-char words for short queries."""
+    base = _topic_tokens_min_len4(topic)
+    if base:
+        return base
+    return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(topic or "") if len(m.group(0)) >= 3}
+
+
+def compute_article_relevance_score(topic: str, row: dict[str, Any]) -> tuple[int, bool]:
+    """
+    Score 0–100: title +40, description +30, first 300 chars of body +20, source-query bonus +10.
+    Keep only if score >= MIN_RELEVANCE_SCORE and (title OR description) contains a topic keyword.
+    """
+    tokens = topic_keywords_for_relevance(topic)
+    title = row.get("title") or ""
+    desc = row.get("description") or ""
+    content = row.get("content") or ""
+    head = content[:RELEVANCE_BODY_PREVIEW_CHARS]
+
+    if not tokens:
+        score = min(100, 40 + 30 + 20 + 10)
+        return score, True
+
+    t_hit = bool(_title_tokens(title) & tokens)
+    d_hit = bool(_title_tokens(desc) & tokens)
+    h_hit = bool(_title_tokens(head) & tokens)
+
+    score = (40 if t_hit else 0) + (30 if d_hit else 0) + (20 if h_hit else 0) + 10
+    score = min(100, score)
+    passes = score >= MIN_RELEVANCE_SCORE and (t_hit or d_hit)
+    return score, passes
+
+
+def _apply_relevance_scoring(by_source: dict[str, list[dict[str, Any]]], user_topic: str) -> int:
+    """Remove low-relevance rows; attach relevance_score to survivors. Returns number removed."""
+    removed = 0
+    for src in list(by_source.keys()):
+        kept: list[dict[str, Any]] = []
+        for r in by_source[src]:
+            score, ok = compute_article_relevance_score(user_topic, r)
+            r["relevance_score"] = score
+            if ok:
+                kept.append(r)
+            else:
+                removed += 1
+        if kept:
+            by_source[src] = kept
+        else:
+            del by_source[src]
+    return removed
+
+
+def suggest_broader_terms(topic: str) -> list[str]:
+    """Return up to 3 broader search ideas when credible outlet coverage is thin."""
+    raw = (topic or "").strip()
+    if not raw:
+        return ["world news", "politics", "economy"]
+    relaxed = relax_search_query(raw) or raw
+    words = [w for w in re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?", relaxed) if len(w) > 2]
+    out: list[str] = []
+    if words:
+        out.append(words[0].lower())
+    if len(words) >= 2:
+        out.append(f"{words[0]} {words[1]}".lower())
+    pool = ["world news", "politics", "economy", "business", "technology", "global trade"]
+    low = raw.lower()
+    for p in pool:
+        if p.lower() != low:
+            out.append(p)
+        if len(out) >= 5:
+            break
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for s in out:
+        s = s.strip()
+        if not s or s.lower() in seen:
+            continue
+        seen.add(s.lower())
+        uniq.append(s)
+        if len(uniq) >= 3:
+            break
+    return uniq[:3] if uniq else ["world news", "politics", "economy"]
+
+
+def limited_coverage_fetch_meta(topic: str, *, source_pool: list[str], query_used: str) -> dict[str, Any]:
+    t = normalize_topic(topic)
+    return {
+        "cached": False,
+        "count": 0,
+        "saved_urls": [],
+        "selected_outlets": [],
+        "coverage_message": f"Limited credible coverage found for '{t}'. Try a broader search term.",
+        "coverage_suggestions": suggest_broader_terms(t),
+        "source_pool": source_pool,
+        "query_used": query_used,
+    }
 
 
 def _article_passes_newsletter_only(row: dict[str, Any], user_topic: str) -> bool:
@@ -591,10 +688,10 @@ def _get_recent_cached_articles(topic: str, db: Session) -> list[Article]:
 
 
 def compute_selected_outlets_from_db(topic: str, db: Session) -> list[str]:
-    """Top approved sources by article count for this topic (>= min articles), max TOP_OUTLET_SLOTS."""
+    """Top approved sources by relevant article count for this topic, max TOP_OUTLET_SLOTS."""
     rows = db.execute(
         select(Article.source, func.count(Article.id))
-        .where(Article.topic == topic)
+        .where(Article.topic == topic, Article.relevance_score >= MIN_RELEVANCE_SCORE)
         .group_by(Article.source)
     ).all()
     eligible = [
@@ -695,17 +792,17 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
             topic,
         )
 
+    _n_rel = _apply_relevance_scoring(by_source, topic)
+    if _n_rel:
+        logger.info(
+            "[NewsLens] dropped %s articles below relevance threshold (topic=%r)",
+            _n_rel,
+            topic,
+        )
+
     eligible_sources = _qualifying_source_names(by_source, MIN_ARTICLES_PER_SOURCE)
-    if len(eligible_sources) < MIN_CREDIBLE_OUTLETS:
-        return {
-            "cached": False,
-            "count": 0,
-            "saved_urls": [],
-            "selected_outlets": [],
-            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
-            "source_pool": final_source_pool,
-            "query_used": final_query_used,
-        }
+    if len(eligible_sources) < MIN_RELEVANT_OUTLETS_FOR_FETCH:
+        return limited_coverage_fetch_meta(topic, source_pool=final_source_pool, query_used=final_query_used)
 
     selected_sources = eligible_sources[:TOP_OUTLET_SLOTS]
 
@@ -714,15 +811,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         flat_raw.extend(by_source[src])
 
     if not flat_raw:
-        return {
-            "cached": False,
-            "count": 0,
-            "saved_urls": [],
-            "selected_outlets": [],
-            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
-            "source_pool": final_source_pool,
-            "query_used": final_query_used,
-        }
+        return limited_coverage_fetch_meta(topic, source_pool=final_source_pool, query_used=final_query_used)
 
     urls_flat = [r["url"] for r in flat_raw]
     blocked_rows = db.execute(select(Article.url).where(Article.url.in_(urls_flat))).all()
@@ -735,15 +824,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         flat_raw = [r for r in flat_raw if r["url"] not in blocked]
 
     if not flat_raw:
-        return {
-            "cached": False,
-            "count": 0,
-            "saved_urls": [],
-            "selected_outlets": [],
-            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
-            "source_pool": final_source_pool,
-            "query_used": final_query_used,
-        }
+        return limited_coverage_fetch_meta(topic, source_pool=final_source_pool, query_used=final_query_used)
 
     flat_by_src: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in flat_raw:
@@ -752,16 +833,8 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         flat_by_src.keys(),
         key=lambda s: (-len(flat_by_src[s]), OUTLET_DISPLAY_RANK.get(s, 999)),
     )
-    if len(reranked) < MIN_CREDIBLE_OUTLETS:
-        return {
-            "cached": False,
-            "count": 0,
-            "saved_urls": [],
-            "selected_outlets": [],
-            "coverage_message": COVERAGE_SHORTFALL_MESSAGE,
-            "source_pool": final_source_pool,
-            "query_used": final_query_used,
-        }
+    if len(reranked) < MIN_RELEVANT_OUTLETS_FOR_FETCH:
+        return limited_coverage_fetch_meta(topic, source_pool=final_source_pool, query_used=final_query_used)
 
     selected_sources = reranked[:TOP_OUTLET_SLOTS]
     flat_raw = []
@@ -792,6 +865,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
             published_at=_parse_newsapi_datetime(raw_row.get("published_at_raw")),
             fetched_at=now_utc,
             snapshot_date=snapshot_date,
+            relevance_score=int(raw_row.get("relevance_score") or 0),
         )
         db.add(article)
         db.flush()
@@ -808,7 +882,10 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         saved_urls.append(raw_row["url"])
 
     for src in selected_sources:
-        rows_for_src = [r for r in flat_raw if r["source"] == src]
+        rows_for_src = sorted(
+            [r for r in flat_raw if r["source"] == src],
+            key=lambda r: -int(r.get("relevance_score") or 0),
+        )
         corpus = build_outlet_corpus_snippets(rows_for_src)
         framing_text = extractive_framing_summary(nlp, corpus, k=2)
         if not framing_text.strip():

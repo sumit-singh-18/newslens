@@ -31,6 +31,7 @@ from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, ex
 from .database import Article, ArticleScore, TopicOutletFraming, create_tables, get_db, normalize_topic
 from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import (
+    MIN_RELEVANCE_SCORE,
     NewsFetcherError,
     compute_selected_outlets_from_db,
     detect_source_categories_for_query,
@@ -132,7 +133,7 @@ def _build_outlet_scores(
             ArticleScore.created_at,
         )
         .join(ArticleScore, ArticleScore.article_id == Article.id)
-        .where(Article.topic == topic)
+        .where(Article.topic == topic, Article.relevance_score >= MIN_RELEVANCE_SCORE)
         .order_by(Article.id.asc(), desc(ArticleScore.created_at))
     ).all()
 
@@ -214,8 +215,8 @@ def _build_outlet_scores(
 def _build_headline_map(topic: str, db: Session, sources: list[str]) -> dict[str, str | None]:
     rows = db.execute(
         select(Article.source, Article.title)
-        .where(Article.topic == topic)
-        .order_by(Article.published_at.desc().nullslast(), Article.fetched_at.desc())
+        .where(Article.topic == topic, Article.relevance_score >= MIN_RELEVANCE_SCORE)
+        .order_by(desc(Article.relevance_score), Article.published_at.desc().nullslast(), Article.fetched_at.desc())
     ).all()
 
     headlines: dict[str, str | None] = {source: None for source in sources}
@@ -240,7 +241,12 @@ def _build_bias_timeline(topic: str, db: Session, outlet_names: list[str], days:
             ArticleScore.created_at,
         )
         .join(ArticleScore, ArticleScore.article_id == Article.id)
-        .where(Article.topic == topic, Article.snapshot_date >= start_date, Article.snapshot_date <= end_date)
+        .where(
+            Article.topic == topic,
+            Article.relevance_score >= MIN_RELEVANCE_SCORE,
+            Article.snapshot_date >= start_date,
+            Article.snapshot_date <= end_date,
+        )
         .order_by(Article.id.asc(), desc(ArticleScore.created_at))
     ).all()
 
@@ -360,6 +366,7 @@ def _topic_volume_trend(topic: str, db: Session, days: int, outlet_names: list[s
     rows = db.execute(
         select(Article.fetched_at, Article.source).where(
             Article.topic == normalized,
+            Article.relevance_score >= MIN_RELEVANCE_SCORE,
             Article.fetched_at >= start_dt,
             Article.fetched_at <= end_dt,
         )

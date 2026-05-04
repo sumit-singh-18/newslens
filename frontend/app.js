@@ -584,6 +584,9 @@ function normalizeAnalyzePayload(raw) {
       typeof fetch.coverage_message === "string" && fetch.coverage_message.trim()
         ? fetch.coverage_message.trim()
         : null,
+    coverage_suggestions: Array.isArray(fetch.coverage_suggestions)
+      ? fetch.coverage_suggestions.map(String).filter(Boolean)
+      : [],
     scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
     bias_distribution: normalizeBiasDistribution(d.bias_distribution),
     most_left_outlet: d.most_left_outlet == null ? null : String(d.most_left_outlet),
@@ -1563,22 +1566,46 @@ function AnalysisResults({
   shareError,
   spectrumFetching,
   onTryBroaderSearch,
+  onSearchTopic,
 }) {
   const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
   const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
   const comparing = compareSelection.length === 2;
   const coverageShortfall =
     outlets.length === 0 && data?.coverage_message ? String(data.coverage_message) : "";
+  const coverageSuggestions = Array.isArray(data?.coverage_suggestions) ? data.coverage_suggestions : [];
+  const showDashboard = !coverageShortfall;
   const status = data?.status || COVERAGE_STATUS.HIGH;
 
   return (
     <main className="results-stack">
       {coverageShortfall ? (
         <section className="card coverage-shortfall" role="status">
-          <p className="eyebrow">Coverage</p>
+          <p className="eyebrow">COVERAGE</p>
           <p className="coverage-shortfall-msg">{coverageShortfall}</p>
+          {coverageSuggestions.length ? (
+            <div className="coverage-suggestions" style={{ marginTop: "14px" }}>
+              <p className="micro-muted" style={{ marginBottom: "8px" }}>
+                Broader terms to try:
+              </p>
+              <div className="history-row">
+                {coverageSuggestions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="history-chip"
+                    onClick={() => onSearchTopic(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
+      {showDashboard ? (
+        <>
       <ResultsHeader
         topic={data.topic || ""}
         outlets={outlets}
@@ -1624,6 +1651,8 @@ function AnalysisResults({
         </div>
       </div>
       <MissingAngleCard missingAngle={data.missing_angle} />
+        </>
+      ) : null}
     </main>
   );
 }
@@ -1834,6 +1863,7 @@ function App() {
             shareError={shareError}
             spectrumFetching={query.isFetching}
             onTryBroaderSearch={handleTryBroaderSearch}
+            onSearchTopic={runSearch}
           />
         </ErrorBoundary>
       ) : null}
