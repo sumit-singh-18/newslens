@@ -453,3 +453,20 @@ Mixed casing / whitespace on the query string produced **`Article.topic`** misma
 ### Verification
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
 - Cleared **`topic_outlet_framing`** and **`topic_analysis`** (SQL **`DELETE`**) so stale LLM/framing cache rows do not reference pre-normalization topic strings.
+
+## [2026-05-04] - Filter newsletter digests before saving articles
+
+### What changed
+- **`backend/news_fetcher.py`**: After NewsAPI results are bucketed by outlet and **before** eligibility / DB writes, articles are dropped when:
+  - the **title** contains digest markers (case-insensitive substrings): **`newsletter`**, **`roundup`**, **`morning`**, **`digest`**, **`weekly`**, **`briefing`**, **`wrap`**, **`rundown`**, **`recap`**, **`this week`**, **`today's`**, **`top stories`**;
+  - the **title** shares **no** word in common with the user topic (words from the topic with length ≥ 4 only; token overlap on title vs topic);
+  - **`content`** length is **> 8000** characters.
+  Logging records how many rows were removed per fetch.
+
+### Reason
+NewsAPI often returns morning roundups and multi-story newsletters that satisfied the API query but polluted extractive framing summaries with unrelated items (e.g. sports or lifestyle blurbs).
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
+- **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.
+- Cleared **`topic_outlet_framing`** and **`topic_analysis`** after the change.

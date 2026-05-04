@@ -351,6 +351,65 @@ def relax_search_query(topic: str) -> str:
     return out or re.sub(r"\s+", " ", without_years).strip() or raw
 
 
+_TITLE_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?")
+
+# Morning digests / newsletters — substring match on lowercased title (case-insensitive).
+_DIGEST_TITLE_MARKERS: tuple[str, ...] = (
+    "newsletter",
+    "roundup",
+    "morning",
+    "digest",
+    "weekly",
+    "briefing",
+    "wrap",
+    "rundown",
+    "recap",
+    "this week",
+    "today's",
+    "top stories",
+)
+
+_MAX_ARTICLE_BODY_CHARS = 8000
+
+
+def _topic_tokens_min_len4(topic: str) -> set[str]:
+    return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(topic or "") if len(m.group(0)) >= 4}
+
+
+def _title_tokens(title: str) -> set[str]:
+    return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(title or "")}
+
+
+def _article_passes_topic_quality_filters(row: dict[str, Any], user_topic: str) -> bool:
+    """Drop newsletter roundups, titles with no query overlap, and oversized digest bodies."""
+    title = row.get("title") or ""
+    content = row.get("content") or ""
+    if len(content) > _MAX_ARTICLE_BODY_CHARS:
+        return False
+    tl = title.lower()
+    for marker in _DIGEST_TITLE_MARKERS:
+        if marker in tl:
+            return False
+    overlap_needed = _topic_tokens_min_len4(user_topic)
+    if overlap_needed:
+        if not (_title_tokens(title) & overlap_needed):
+            return False
+    return True
+
+
+def _filter_fetched_articles_for_topic(by_source: dict[str, list[dict[str, Any]]], user_topic: str) -> int:
+    """Remove low-value rows in-place; returns count of dropped articles."""
+    removed = 0
+    for src in list(by_source.keys()):
+        kept = [r for r in by_source[src] if _article_passes_topic_quality_filters(r, user_topic)]
+        removed += len(by_source[src]) - len(kept)
+        if kept:
+            by_source[src] = kept
+        else:
+            del by_source[src]
+    return removed
+
+
 def _parse_newsapi_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -572,6 +631,14 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
 
     except httpx.HTTPError as exc:
         raise NewsFetcherError(f"NewsAPI request failed: {exc}") from exc
+
+    _n_dropped = _filter_fetched_articles_for_topic(by_source, topic)
+    if _n_dropped:
+        logger.info(
+            "[NewsLens] dropped %s newsletter/off-topic/oversized articles before persistence (topic=%r)",
+            _n_dropped,
+            topic,
+        )
 
     eligible_sources = _qualifying_source_names(by_source, MIN_ARTICLES_PER_SOURCE)
     if len(eligible_sources) < MIN_CREDIBLE_OUTLETS:
