@@ -60332,7 +60332,17 @@ function outletKeysWithPositiveTotals(rows, outletSources, mode) {
 }
 var CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
 var MISSING_ANGLE_UNAVAILABLE_COPY = "Editorial analysis temporarily unavailable. Check back shortly.";
-var MISSING_ANGLE_QUOTA_LIMITED_COPY = "Missing Angle: AI Analysis currently at capacity. Retrying in 60s...";
+var MISSING_ANGLE_SEARCH_AGAIN_SHORTLY = "Analysis will be available in ~1 minute. Search again shortly.";
+function reasoningLooksLikeQuotaOrTransientFailure(reasoning) {
+  const r2 = String(reasoning ?? "").toLowerCase();
+  return r2.includes("quota") || r2.includes("429") || r2.includes("exceeded") || r2.includes("unavailable");
+}
+function missingAngleShouldShowQuotaWaitMessage(ma) {
+  if (!ma || typeof ma !== "object") return false;
+  const rawVal = ma.value;
+  const valueMissing = rawVal == null || typeof rawVal === "string" && rawVal.trim() === "";
+  return valueMissing && reasoningLooksLikeQuotaOrTransientFailure(ma.reasoning);
+}
 function missingAngleIsUnavailableUserFacing(ma) {
   if (!ma || typeof ma !== "object") return true;
   if (String(ma.analysis_status ?? "").toLowerCase() === "quota_limited") return true;
@@ -60346,8 +60356,14 @@ function missingAnglePresentationalCopy(ma) {
   const analysisStatus = String(ma?.analysis_status ?? "").toLowerCase();
   if (analysisStatus === "quota_limited") {
     return {
-      body: MISSING_ANGLE_QUOTA_LIMITED_COPY,
-      reasoning: MISSING_ANGLE_QUOTA_LIMITED_COPY
+      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
+      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY
+    };
+  }
+  if (missingAngleShouldShowQuotaWaitMessage(ma)) {
+    return {
+      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
+      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY
     };
   }
   if (missingAngleIsUnavailableUserFacing(ma)) {
@@ -60518,12 +60534,18 @@ function normalizeAnalyzePayload(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
   const fetch2 = d.fetch && typeof d.fetch === "object" ? d.fetch : {};
+  const maBlock = normalizeMissingAngleBlock(d.missing_angle);
+  const rootAnalysisStatus = d.analysis_status == null || d.analysis_status === "" ? null : String(d.analysis_status);
+  const missing_angle = {
+    ...maBlock,
+    analysis_status: maBlock.analysis_status ?? rootAnalysisStatus
+  };
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
     status: normalizeCoverageStatus(d.status),
     outlets,
     timeline: normalizeTimeline(d.timeline),
-    missing_angle: normalizeMissingAngleBlock(d.missing_angle),
+    missing_angle,
     fetch: fetch2,
     coverage_message: typeof fetch2.coverage_message === "string" && fetch2.coverage_message.trim() ? fetch2.coverage_message.trim() : null,
     scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
@@ -61095,7 +61117,10 @@ function ResultsHeader({
   }, [spectrumExtremes, outlets]);
   const teaser = (0, import_react36.useMemo)(() => {
     if (String(missingAngle?.analysis_status ?? "").toLowerCase() === "quota_limited") {
-      return MISSING_ANGLE_QUOTA_LIMITED_COPY;
+      return MISSING_ANGLE_SEARCH_AGAIN_SHORTLY;
+    }
+    if (missingAngleShouldShowQuotaWaitMessage(missingAngle)) {
+      return MISSING_ANGLE_SEARCH_AGAIN_SHORTLY;
     }
     if (missingAngleIsUnavailableUserFacing(missingAngle)) {
       return MISSING_ANGLE_UNAVAILABLE_COPY;
