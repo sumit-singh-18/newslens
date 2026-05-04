@@ -60690,6 +60690,7 @@ function normalizeAnalyzePayload(raw) {
     missing_angle,
     fetch: fetch2,
     coverage_message: typeof fetch2.coverage_message === "string" && fetch2.coverage_message.trim() ? fetch2.coverage_message.trim() : null,
+    coverage_suggestions: Array.isArray(fetch2.coverage_suggestions) ? fetch2.coverage_suggestions.map(String).filter(Boolean) : [],
     scoring: d.scoring && typeof d.scoring === "object" ? d.scoring : {},
     bias_distribution: normalizeBiasDistribution(d.bias_distribution),
     most_left_outlet: d.most_left_outlet == null ? null : String(d.most_left_outlet),
@@ -61303,14 +61304,26 @@ function AnalysisResults({
   shareBusy,
   shareError,
   spectrumFetching,
-  onTryBroaderSearch
+  onTryBroaderSearch,
+  onSearchTopic
 }) {
   const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
   const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
   const comparing = compareSelection.length === 2;
   const coverageShortfall = outlets.length === 0 && data?.coverage_message ? String(data.coverage_message) : "";
+  const coverageSuggestions = Array.isArray(data?.coverage_suggestions) ? data.coverage_suggestions : [];
+  const showDashboard = !coverageShortfall;
   const status = data?.status || COVERAGE_STATUS.HIGH;
-  return /* @__PURE__ */ import_react36.default.createElement("main", { className: "results-stack" }, coverageShortfall ? /* @__PURE__ */ import_react36.default.createElement("section", { className: "card coverage-shortfall", role: "status" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Coverage"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "coverage-shortfall-msg" }, coverageShortfall)) : null, /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("main", { className: "results-stack" }, coverageShortfall ? /* @__PURE__ */ import_react36.default.createElement("section", { className: "card coverage-shortfall", role: "status" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "COVERAGE"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "coverage-shortfall-msg" }, coverageShortfall), coverageSuggestions.length ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "coverage-suggestions", style: { marginTop: "14px" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted", style: { marginBottom: "8px" } }, "Broader terms to try:"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row" }, coverageSuggestions.map((s2) => /* @__PURE__ */ import_react36.default.createElement(
+    "button",
+    {
+      key: s2,
+      type: "button",
+      className: "history-chip",
+      onClick: () => onSearchTopic(s2)
+    },
+    s2
+  )))) : null) : null, showDashboard ? /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, null, /* @__PURE__ */ import_react36.default.createElement(
     ResultsHeader,
     {
       topic: data.topic || "",
@@ -61338,7 +61351,7 @@ function AnalysisResults({
       },
       isFetching: spectrumFetching
     }
-  ), /* @__PURE__ */ import_react36.default.createElement(OutletGrid, { outlets, compareSelection, onCompareClick }), /* @__PURE__ */ import_react36.default.createElement(HeadlineComparison, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-grid" }, /* @__PURE__ */ import_react36.default.createElement(SentimentDistribution, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "timeline-column" }, /* @__PURE__ */ import_react36.default.createElement(Timeline, { timeline, outlets }), /* @__PURE__ */ import_react36.default.createElement(TopicTrendChart, { topic: data.topic || "", outlets }))), /* @__PURE__ */ import_react36.default.createElement(MissingAngleCard, { missingAngle: data.missing_angle }));
+  ), /* @__PURE__ */ import_react36.default.createElement(OutletGrid, { outlets, compareSelection, onCompareClick }), /* @__PURE__ */ import_react36.default.createElement(HeadlineComparison, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-grid" }, /* @__PURE__ */ import_react36.default.createElement(SentimentDistribution, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "timeline-column" }, /* @__PURE__ */ import_react36.default.createElement(Timeline, { timeline, outlets }), /* @__PURE__ */ import_react36.default.createElement(TopicTrendChart, { topic: data.topic || "", outlets }))), /* @__PURE__ */ import_react36.default.createElement(MissingAngleCard, { missingAngle: data.missing_angle })) : null);
 }
 function Hero({
   searchInput,
@@ -61493,7 +61506,8 @@ function App() {
       shareBusy,
       shareError,
       spectrumFetching: query.isFetching,
-      onTryBroaderSearch: handleTryBroaderSearch
+      onTryBroaderSearch: handleTryBroaderSearch,
+      onSearchTopic: runSearch
     }
   )) : null);
 }
