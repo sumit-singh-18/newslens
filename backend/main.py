@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -227,6 +228,51 @@ def _build_headline_map(topic: str, db: Session, sources: list[str]) -> dict[str
             continue
         headlines[row.source] = row.title
     return headlines
+
+
+def _clean_article_body_preview(text: str | None, max_chars: int = 300) -> str | None:
+    """Strip HTML / URLs and collapse whitespace; return first max_chars or None if empty."""
+    if not text:
+        return None
+    cleaned = re.sub(r"<[^>]+>", " ", text)
+    cleaned = re.sub(r"https?://\S+|www\.\S+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return None
+    return cleaned[:max_chars] if len(cleaned) > max_chars else cleaned
+
+
+def _build_top_article_fields_map(topic: str, db: Session, sources: list[str]) -> dict[str, dict[str, str | None]]:
+    """Highest relevance_score article per outlet (among scored articles)."""
+    rows = db.execute(
+        select(
+            Article.id,
+            Article.source,
+            Article.url,
+            Article.title,
+            Article.content,
+            Article.relevance_score,
+        )
+        .join(ArticleScore, ArticleScore.article_id == Article.id)
+        .where(Article.topic == topic, Article.relevance_score >= MIN_RELEVANCE_SCORE)
+        .order_by(Article.source.asc(), desc(Article.relevance_score), Article.id.asc())
+    ).all()
+
+    wanted = set(sources)
+    out: dict[str, dict[str, str | None]] = {}
+    seen_article_ids: set[int] = set()
+    for row in rows:
+        if row.source not in wanted or row.source in out:
+            continue
+        if row.id in seen_article_ids:
+            continue
+        seen_article_ids.add(row.id)
+        out[row.source] = {
+            "top_article_url": row.url or None,
+            "top_article_headline": row.title or None,
+            "top_article_preview": _clean_article_body_preview(row.content),
+        }
+    return out
 
 
 def _build_bias_timeline(topic: str, db: Session, outlet_names: list[str], days: int = 7) -> list[dict]:
@@ -493,6 +539,7 @@ async def analyze_topic(
     llm_result = LLMAnalyzer().generate_missing_angle(normalized_topic, db, selected)
     llm_data = llm_result.get("data", {})
     headlines = _build_headline_map(normalized_topic, db, selected)
+    top_article_fields = _build_top_article_fields_map(normalized_topic, db, selected)
     timeline = _build_bias_timeline(normalized_topic, db, selected, days=7)
 
     outlet_missing_angles = llm_data.get("outlet_missing_angles", {})
@@ -502,6 +549,15 @@ async def analyze_topic(
         merged_outlet = dict(outlet)
         merged_outlet["missing_angle"] = outlet_missing_angles.get(source)
         merged_outlet["headline"] = headlines.get(source)
+        ta = top_article_fields.get(source)
+        if ta:
+            merged_outlet["top_article_url"] = ta["top_article_url"]
+            merged_outlet["top_article_headline"] = ta["top_article_headline"]
+            merged_outlet["top_article_preview"] = ta["top_article_preview"]
+        else:
+            merged_outlet["top_article_url"] = None
+            merged_outlet["top_article_headline"] = None
+            merged_outlet["top_article_preview"] = None
         outlets_with_missing_angle.append(merged_outlet)
 
     bias_distribution = bias_distribution_from_outlets(score_data["outlets"])

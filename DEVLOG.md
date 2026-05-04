@@ -549,3 +549,11 @@ Post-fetch filtering missed many **NewsAPI** off-topic hits; scoring before pers
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
 - **`npm run build`** in **`frontend/`**: success.
 - Cleared **`articles`** / **`article_scores`** / **`topic_analysis`** / **`topic_outlet_framing`** locally via **`SessionLocal`** script.
+
+## [2026-05-04] - /analyze: top article URL, headline, preview per outlet
+
+### What changed
+- **`backend/main.py`**: **`_clean_article_body_preview`** (strip HTML/URLs, whitespace; cap **300** chars) and **`_build_top_article_fields_map`** (`articles` **`JOIN`** **`article_scores`**, topic + **`MIN_RELEVANCE_SCORE`**, **`ORDER BY`** **`relevance_score`** **`DESC`**, first row per outlet). **`/analyze`** merges **`top_article_url`**, **`top_article_headline`**, **`top_article_preview`** onto each outlet ( **`null`** when none).
+
+### Verification
+- **`GET /analyze?topic=trade+war`**: each outlet includes the three fields.
