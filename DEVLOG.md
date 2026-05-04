@@ -439,3 +439,17 @@ Broader, topic-aware sourcing improves recall on tech/finance/science queries wh
 
 ### Verification
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
+
+## [2026-05-04] - Canonical topic normalization (outlet cards / DB)
+
+### What changed
+- **`backend/database.py`**: **`normalize_topic(topic)`** → **`topic.lower().strip()`** as the single key for **`Article`**, **`TopicOutletFraming`**, and **`TopicAnalysis`** lookups and inserts.
+- **`backend/main.py`**, **`backend/news_fetcher.py`** (**`fetch_and_store_articles`** persistence path), **`backend/nlp_pipeline.py`** (**`score_topic_articles`**), **`backend/llm_analyzer.py`** (**`generate_missing_angle`**): all request/topic strings run through **`normalize_topic`** before counts, outlet selection, scoring, framing rows, and LLM cache keys. **`_topic_volume_trend`** uses the same normalization.
+- **Note**: **`framing_extract.py`** has no ORM calls; extractive framing text is written with **`Article`** / **`TopicOutletFraming`** in **`news_fetcher.py`** after **`normalize_topic`** is applied at fetch entry.
+
+### Reason
+Mixed casing / whitespace on the query string produced **`Article.topic`** mismatches, so joins and per-outlet reads could pick up rows from other searches sharing the same outlet name. Normalizing the stored topic matches every **`Article.topic == …`** filter.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
+- Cleared **`topic_outlet_framing`** and **`topic_analysis`** (SQL **`DELETE`**) so stale LLM/framing cache rows do not reference pre-normalization topic strings.

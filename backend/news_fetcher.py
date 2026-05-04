@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from .database import Article, ArticleScore, TopicOutletFraming
+from .database import Article, ArticleScore, TopicOutletFraming, normalize_topic
 from .framing_extract import (
     build_outlet_corpus_snippets,
     extractive_framing_summary,
@@ -499,7 +499,7 @@ def _invalidate_topic_articles(topic: str, db: Session) -> None:
 
 
 async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
-    topic = topic.strip()
+    topic = normalize_topic(topic)
     if not topic:
         raise NewsFetcherError("Topic must not be empty.")
 

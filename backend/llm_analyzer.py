@@ -12,7 +12,7 @@ from google.api_core import exceptions as google_api_exceptions
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .database import Article, TopicAnalysis
+from .database import Article, TopicAnalysis, normalize_topic
 from .news_fetcher import compute_selected_outlets_from_db
 
 logger = logging.getLogger(__name__)
@@ -298,7 +298,7 @@ class LLMAnalyzer:
         db: Session,
         outlet_sources: list[str] | None = None,
     ) -> dict[str, Any]:
-        normalized_topic = topic.strip()
+        normalized_topic = normalize_topic(topic)
         if not normalized_topic:
             return {
                 "success": False,

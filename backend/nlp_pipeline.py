@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
 from .bias_utils import bias_label_from_axis
-from .database import Article, ArticleScore
+from .database import Article, ArticleScore, normalize_topic
 
 
 DEFAULT_SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment"
@@ -239,7 +239,7 @@ class NLPPipeline:
         return output
 
     def score_topic_articles(self, topic: str, db: Session) -> dict[str, Any]:
-        normalized_topic = topic.strip()
+        normalized_topic = normalize_topic(topic)
         if not normalized_topic:
             raise ValueError("Topic must not be empty.")
 

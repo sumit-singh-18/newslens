@@ -28,7 +28,7 @@ _extra_cors = [
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
-from .database import Article, ArticleScore, TopicOutletFraming, create_tables, get_db
+from .database import Article, ArticleScore, TopicOutletFraming, create_tables, get_db, normalize_topic
 from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import (
     NewsFetcherError,
@@ -351,7 +351,7 @@ def _outlet_historical_profile(outlet: str, db: Session) -> dict:
 
 def _topic_volume_trend(topic: str, db: Session, days: int, outlet_names: list[str]) -> list[dict]:
     """Article counts per calendar day (UTC) and source from fetched_at."""
-    normalized = topic.strip()
+    normalized = normalize_topic(topic)
     end_date = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=max(1, days) - 1)
     start_dt = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
@@ -409,7 +409,7 @@ def get_scores(
     db: Session = Depends(get_db),
     nlp_pipeline: NLPPipeline = Depends(get_nlp_pipeline),
 ) -> ScoresResponse:
-    normalized_topic = topic.strip()
+    normalized_topic = normalize_topic(topic)
     if not normalized_topic:
         raise HTTPException(status_code=400, detail="Topic must not be empty.")
 
@@ -440,7 +440,7 @@ async def analyze_topic(
     db: Session = Depends(get_db),
     nlp_pipeline: NLPPipeline = Depends(get_nlp_pipeline),
 ) -> AnalyzeResponse:
-    normalized_topic = topic.strip()
+    normalized_topic = normalize_topic(topic)
     if not normalized_topic:
         raise HTTPException(status_code=400, detail="Topic must not be empty.")
 
@@ -570,7 +570,7 @@ def get_topic_trend(
     days: int = Query(DEFAULT_TOPIC_TREND_DAYS, ge=1, le=90),
     db: Session = Depends(get_db),
 ) -> AnalyzeResponse:
-    normalized = topic.strip()
+    normalized = normalize_topic(topic)
     if not normalized:
         raise HTTPException(status_code=400, detail="Topic must not be empty.")
     outlets_for_topic = compute_selected_outlets_from_db(normalized, db)

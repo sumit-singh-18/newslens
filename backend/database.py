@@ -27,6 +27,11 @@ class Base(DeclarativeBase):
     pass
 
 
+def normalize_topic(topic: str) -> str:
+    """Single canonical form for topic keys in DB queries and stored rows."""
+    return (topic or "").lower().strip()
+
+
 class Article(Base):
     __tablename__ = "articles"
 
