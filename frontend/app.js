@@ -41,6 +41,22 @@ const API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
 const HISTORY_KEY = "newslens-search-history";
 const DEFAULT_SERIES_LABEL = "14d";
 
+const SUGGESTED_TOPICS = ["15-Minute Cities", "Digital Pound", "Right to Repair"];
+
+const COVERAGE_STATUS = {
+  HIGH: "high",
+  DEVELOPING: "developing",
+  INSUFFICIENT: "insufficient",
+};
+
+function normalizeCoverageStatus(raw) {
+  const s = raw == null ? "" : String(raw).trim().toLowerCase();
+  if (s === COVERAGE_STATUS.DEVELOPING) return COVERAGE_STATUS.DEVELOPING;
+  if (s === COVERAGE_STATUS.INSUFFICIENT) return COVERAGE_STATUS.INSUFFICIENT;
+  if (s === COVERAGE_STATUS.HIGH) return COVERAGE_STATUS.HIGH;
+  return COVERAGE_STATUS.HIGH;
+}
+
 /** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
 const MISSING_ANGLE_UNAVAILABLE_COPY =
   "Editorial analysis temporarily unavailable. Check back shortly.";
@@ -280,6 +296,7 @@ function normalizeAnalyzePayload(raw) {
   const fetch = d.fetch && typeof d.fetch === "object" ? d.fetch : {};
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
+    status: normalizeCoverageStatus(d.status),
     outlets,
     timeline: normalizeTimeline(d.timeline),
     missing_angle: normalizeMissingAngleBlock(d.missing_angle),
@@ -502,7 +519,7 @@ function LoadingSkeleton() {
   );
 }
 
-function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExtremes }) {
+function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExtremes, isFetching }) {
   const list = Array.isArray(outlets) ? outlets : [];
   const widths = useMemo(
     () => spectrumSegmentWidths(biasDistribution, list),
@@ -552,7 +569,10 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
         <span>Each outlet positioned by average bias score for this topic</span>
       </div>
       <div className="outlet-spectrum-visual">
-        <div className="spectrum-gradient-bar" aria-hidden="true">
+        <div
+          className={`spectrum-gradient-bar${isFetching ? " spectrum-bar-shimmer" : ""}`}
+          aria-hidden="true"
+        >
           <div className="spectrum-segment spectrum-segment-left" style={{ flex: widths.left }} />
           <div
             className="spectrum-segment spectrum-segment-center"
@@ -965,6 +985,39 @@ function MissingAngleCard({ missingAngle }) {
   );
 }
 
+function DevelopingStoryBanner() {
+  return (
+    <div className="developing-story-banner" role="status">
+      <span className="developing-pulse-icon" aria-hidden>
+        <span className="developing-pulse-dot" />
+        <span className="developing-pulse-ring" />
+      </span>
+      <p className="developing-story-copy">
+        <strong>Developing Story:</strong> This topic has emerging coverage. Analysis will refine as more sources
+        report.
+      </p>
+    </div>
+  );
+}
+
+function InsufficientCoverageCard({ onTryBroaderSearch }) {
+  return (
+    <section className="card insufficient-coverage-card" aria-labelledby="insufficient-coverage-heading">
+      <p className="eyebrow">Coverage</p>
+      <h2 id="insufficient-coverage-heading" className="insufficient-coverage-title">
+        Not enough coverage
+      </h2>
+      <p className="insufficient-coverage-body">
+        Few articles matched this topic in our current window. Try a shorter or broader query to surface more
+        outlets.
+      </p>
+      <button type="button" className="btn-broader-search" onClick={onTryBroaderSearch}>
+        Try a broader search
+      </button>
+    </section>
+  );
+}
+
 function Header({ onStartAnalysis }) {
   return (
     <header className="topbar">
@@ -1058,12 +1111,15 @@ function AnalysisResults({
   onShare,
   shareBusy,
   shareError,
+  spectrumFetching,
+  onTryBroaderSearch,
 }) {
   const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
   const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
   const comparing = compareSelection.length === 2;
   const coverageShortfall =
     outlets.length === 0 && data?.coverage_message ? String(data.coverage_message) : "";
+  const status = data?.status || COVERAGE_STATUS.HIGH;
 
   return (
     <main className="results-stack">
@@ -1087,6 +1143,10 @@ function AnalysisResults({
         shareBusy={shareBusy}
         shareError={shareError}
       />
+      {status === COVERAGE_STATUS.DEVELOPING ? <DevelopingStoryBanner /> : null}
+      {status === COVERAGE_STATUS.INSUFFICIENT ? (
+        <InsufficientCoverageCard onTryBroaderSearch={onTryBroaderSearch} />
+      ) : null}
       {comparing ? (
         <ComparisonPanel pair={compareSelection} outlets={outlets} onExit={onExitComparison} />
       ) : null}
@@ -1102,6 +1162,7 @@ function AnalysisResults({
           most_left_outlet: data.most_left_outlet,
           most_right_outlet: data.most_right_outlet,
         }}
+        isFetching={spectrumFetching}
       />
       <OutletGrid outlets={outlets} compareSelection={compareSelection} onCompareClick={onCompareClick} />
       <HeadlineComparison outlets={outlets} />
@@ -1128,7 +1189,7 @@ function Hero({
   runSearch,
 }) {
   return (
-    <section className="hero">
+    <section className="hero" id="search-anchor">
       <p className="eyebrow">NewsLens editorial intelligence</p>
       <h1>Read the same story through every bias line.</h1>
       <p className="lede">
@@ -1148,6 +1209,21 @@ function Hero({
           Analyze
         </button>
       </form>
+      <div className="suggested-topics">
+        <p className="suggested-topics-label">Suggested topics</p>
+        <div className="suggested-topics-row">
+          {SUGGESTED_TOPICS.map((label) => (
+            <button
+              key={label}
+              type="button"
+              className="suggestion-tag"
+              onClick={() => runSearch(label)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       {isError ? (
         <p className="inline-error">
           Could not load analysis: {error?.message != null ? String(error.message) : String(error)}
@@ -1218,9 +1294,23 @@ function App() {
     runSearch(searchInput);
   };
 
+  const focusSearchArea = () => {
+    document.getElementById("search-anchor")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = searchRef.current;
+        el?.focus();
+        el?.select?.();
+      }, 320);
+    });
+  };
+
   const handleStartAnalysis = () => {
-    searchRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    setTimeout(() => searchRef.current?.focus(), 300);
+    focusSearchArea();
+  };
+
+  const handleTryBroaderSearch = () => {
+    focusSearchArea();
   };
 
   const handleCompareClick = (source) => {
@@ -1292,6 +1382,8 @@ function App() {
             onShare={handleShare}
             shareBusy={shareBusy}
             shareError={shareError}
+            spectrumFetching={query.isFetching}
+            onTryBroaderSearch={handleTryBroaderSearch}
           />
         </ErrorBoundary>
       ) : null}

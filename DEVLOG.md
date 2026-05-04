@@ -215,6 +215,12 @@ This file tracks all major development progress, decisions, challenges, and solu
 ### Status
 - Phase 4b features are implemented end-to-end; rebuild `frontend/bundle.js` after editing `frontend/app.js` with `frontend/esbuild` or project-local `esbuild` (`npm run build` when Node is available).
 
+### Phase 4b follow-up (verified): Confidence UI and query suggestions
+- **Coverage status** from `GET /analyze` (`high` / `developing` / `insufficient`) is normalized in the dashboard state and drives UI: an amber glass **developing story** banner (with pulse indicator) above the results stack, and an **insufficient coverage** card with a **Try a broader search** control that returns focus to the hero search.
+- **Suggested topics** appear as uppercase pill tags under the search field (aligned with outlet bias pill styling); choosing one fills the query and runs the same **Analyze** path as manual submit.
+- **Start Analysis** in the header scrolls to `#search-anchor` and focuses/selects the search input; the **bias spectrum** bar shows a **shimmer** overlay while React Query reports `isFetching` for the active topic (works with `keepPreviousData` on refresh).
+- Rebuilt `frontend/bundle.js` after `frontend/app.js` changes; spacing and radii stay on the 8px grid and 24px card radius per the frontend constitution.
+
 ## [2026-05-02] - Local dev scripts & stack smoke test
 
 ### What Was Done
