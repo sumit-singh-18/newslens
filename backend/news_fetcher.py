@@ -291,7 +291,7 @@ OUTLET_DISPLAY_RANK: dict[str, int] = {
 
 TOP_OUTLET_SLOTS = 5
 MIN_ARTICLES_PER_SOURCE = 1
-MIN_RELEVANCE_SCORE = 40
+MIN_RELEVANCE_SCORE = 20
 MIN_RELEVANT_OUTLETS_FOR_FETCH = 2
 RELEVANCE_BODY_PREVIEW_CHARS = 300
 NEWSAPI_PAGE_SIZE = 100
@@ -418,28 +418,293 @@ def topic_keywords_for_relevance(topic: str) -> set[str]:
     return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(topic or "") if len(m.group(0)) >= 3}
 
 
+# Words under 4 chars are dropped unless they are not common stopwords (so "war" in "trade war" is kept).
+_STOPWORDS_LEN3: frozenset[str] = frozenset(
+    (
+        "the",
+        "and",
+        "for",
+        "are",
+        "but",
+        "not",
+        "you",
+        "all",
+        "can",
+        "her",
+        "was",
+        "one",
+        "our",
+        "out",
+        "day",
+        "get",
+        "has",
+        "him",
+        "his",
+        "how",
+        "its",
+        "may",
+        "new",
+        "now",
+        "old",
+        "see",
+        "two",
+        "way",
+        "who",
+        "any",
+        "did",
+        "let",
+        "say",
+        "too",
+    )
+)
+
+# Extra phrases for known topics where pairwise keywords collide with unrelated headlines.
+_TOPIC_PHRASE_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "right to repair": (
+        "right repair",
+        "right-to-repair",
+        "repair law",
+        "repair movement",
+        "ifixit",
+        "john deere",
+        "apple repair",
+        "farm equipment",
+        "repair restrictions",
+        "consumer repair",
+    ),
+    "trade war": (
+        "trade war",
+        "trade-war",
+        "tariffs",
+        "china trade",
+        "import duties",
+    ),
+    "trade war tariffs": (
+        "trade war",
+        "trade-war",
+        "tariffs",
+        "import duties",
+        "china trade",
+    ),
+    "digital warfare": (
+        "digital warfare",
+        "cyber warfare",
+        "cyberwar",
+        "cyber operations",
+        "malware",
+        "ransomware",
+        "hacking campaign",
+    ),
+}
+
+_REPAIR_DIPLOMACY_COLLISION_HINTS: frozenset[str] = frozenset(
+    ("relations", "diplomatic", "diplomacy", "bilateral", "ties", "alliance", "foreign")
+)
+
+_WAR_FIGURATIVE_TITLE_HINTS: frozenset[str] = frozenset(
+    ("star wars", "price war", "bidding war", "turf war", "talent war")
+)
+
+_TOPIC_IS_FIGURATIVE_WAR_QUERY_MARKERS: frozenset[str] = frozenset(
+    ("star wars", "price war", "bidding war", "turf war", "talent war")
+)
+
+_DIGITAL_WARFARE_DIPLOMACY_HINTS: frozenset[str] = frozenset(
+    ("summit", "bilateral", "embassy", "minister", "talks", "negotiations", "treaty", "alliance")
+)
+
+_DIGITAL_WARFARE_TECH_HINTS: frozenset[str] = frozenset(
+    ("cyber", "hacker", "hackers", "malware", "ransomware", "ddos", "software", "chip", "online", "internet")
+)
+
+
+def _normalize_topic_query(topic: str) -> str:
+    return re.sub(r"\s+", " ", (topic or "").strip().lower())
+
+
+def meaningful_topic_words(topic: str) -> list[str]:
+    """
+    Meaningful topic tokens: length >= 4, or length 3 when not a common stopword (keeps e.g. 'war').
+    Shorter tokens (e.g. 'to', 'a') are skipped.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _TITLE_WORD_RE.finditer(topic or ""):
+        w = m.group(0).lower()
+        if len(w) < 3:
+            continue
+        if len(w) < 4 and w in _STOPWORDS_LEN3:
+            continue
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out
+
+
+def _topic_expansion_phrases(topic: str) -> tuple[str, ...]:
+    return _TOPIC_PHRASE_EXPANSIONS.get(_normalize_topic_query(topic), ())
+
+
+def _generated_adjacent_phrases(meaningful: list[str]) -> list[str]:
+    phrases: list[str] = []
+    for i in range(len(meaningful) - 1):
+        a, b = meaningful[i], meaningful[i + 1]
+        phrases.append(f"{a} {b}")
+        phrases.append(f"{a}-{b}")
+    return phrases
+
+
+def _title_word_indices(title: str) -> list[str]:
+    return [m.group(0).lower() for m in _TITLE_WORD_RE.finditer(title or "")]
+
+
+def _two_meaningful_words_within_window(title: str, meaningful: list[str], window: int = 5) -> bool:
+    """True if two distinct topic words from `meaningful` appear in the title within `window` word positions."""
+    words = _title_word_indices(title)
+    positions: dict[str, list[int]] = {}
+    meaningful_set = set(meaningful)
+    for i, w in enumerate(words):
+        if w in meaningful_set:
+            positions.setdefault(w, []).append(i)
+    present = [w for w in meaningful if w in positions]
+    if len(present) < 2:
+        return False
+    for i, wa in enumerate(present):
+        for wb in present[i + 1 :]:
+            if wa == wb:
+                continue
+            for ia in positions[wa]:
+                for ib in positions[wb]:
+                    if abs(ia - ib) <= window:
+                        return True
+    return False
+
+
+def _phrase_hit_in_text(text: str, phrases: tuple[str, ...] | list[str]) -> bool:
+    tl = (text or "").lower()
+    return any(p.lower() in tl for p in phrases if p)
+
+
+def _strong_topic_phrase_in_title(topic: str, title: str, meaningful: list[str]) -> bool:
+    """Proximity, hyphen/adjacent phrase substring, or curated expansions in the title."""
+    if _two_meaningful_words_within_window(title, meaningful):
+        return True
+    for p in _generated_adjacent_phrases(meaningful):
+        if p.lower() in (title or "").lower():
+            return True
+    return _phrase_hit_in_text(title, _topic_expansion_phrases(topic))
+
+
+def _multiword_field_points(text: str, meaningful: list[str], full_pts: int, one_pts: int) -> int:
+    n = len(_title_tokens(text) & set(meaningful))
+    if n >= 2:
+        return full_pts
+    if n == 1:
+        return one_pts
+    return 0
+
+
+def _relevance_context_reject(topic: str, title: str) -> bool:
+    """
+    Drop headlines whose dominant context collides with the topic keyword but not the user's intent.
+    """
+    tl = _normalize_topic_query(topic)
+    tit = (title or "").lower()
+
+    if "repair" in tl and any(h in tit for h in _REPAIR_DIPLOMACY_COLLISION_HINTS):
+        return True
+
+    if "war" in tl and not any(m in tl for m in _TOPIC_IS_FIGURATIVE_WAR_QUERY_MARKERS):
+        if any(h in tit for h in _WAR_FIGURATIVE_TITLE_HINTS):
+            return True
+
+    if "digital" in tl and "warfare" in tl:
+        has_diplo = any(h in tit for h in _DIGITAL_WARFARE_DIPLOMACY_HINTS)
+        has_tech = any(h in tit for h in _DIGITAL_WARFARE_TECH_HINTS)
+        if has_diplo and not has_tech:
+            return True
+
+    return False
+
+
+def _title_or_description_covers_multiword_topic(
+    topic: str, title: str, desc: str, meaningful: list[str]
+) -> bool:
+    """Require >=2 meaningful words in title ∪ description, exact topic substring, or a known expansion phrase."""
+    combined = _title_tokens(title) | _title_tokens(desc)
+    if len(combined & set(meaningful)) >= 2:
+        return True
+    nt = _normalize_topic_query(topic)
+    if nt and nt in (title or "").lower():
+        return True
+    if nt and nt in (desc or "").lower():
+        return True
+    extra = list(_topic_expansion_phrases(topic)) + _generated_adjacent_phrases(meaningful)
+    if _phrase_hit_in_text(title, extra) or _phrase_hit_in_text(desc, extra):
+        return True
+    return False
+
+
 def compute_article_relevance_score(topic: str, row: dict[str, Any]) -> tuple[int, bool]:
     """
-    Score 0–100: title +40, description +30, first 300 chars of body +20, source-query bonus +10.
-    Keep only if score >= MIN_RELEVANCE_SCORE and (title OR description) contains a topic keyword.
+    Phrase-aware relevance for multi-word topics (two or more meaningful tokens; 3-letter content
+    words like “war” are kept, common 3-letter fillers are dropped):
+    - Title: +60 exact topic string in title; else +40 proximity / phrase / expansion; else +20 if >=2
+      topic words in title; else +10 if 1 word.
+    - Description / body head: scaled points when multiple topic words appear together.
+    - Minimum score to keep: MIN_RELEVANCE_SCORE (requires >=2 topic words in title ∪ description for
+      multi-word topics). Title-only / description-only gates match legacy tests.
+    Context rejection removes diplomacy / figurative collisions (e.g. “repair relations”, “Star Wars”).
     """
-    tokens = topic_keywords_for_relevance(topic)
     title = row.get("title") or ""
     desc = row.get("description") or ""
     content = row.get("content") or ""
     head = content[:RELEVANCE_BODY_PREVIEW_CHARS]
 
-    if not tokens:
-        score = min(100, 40 + 30 + 20 + 10)
-        return score, True
+    if _relevance_context_reject(topic, title):
+        return 0, False
 
-    t_hit = bool(_title_tokens(title) & tokens)
-    d_hit = bool(_title_tokens(desc) & tokens)
-    h_hit = bool(_title_tokens(head) & tokens)
+    meaningful = meaningful_topic_words(topic)
+    nt = _normalize_topic_query(topic)
 
-    score = (40 if t_hit else 0) + (30 if d_hit else 0) + (20 if h_hit else 0) + 10
-    score = min(100, score)
-    passes = score >= MIN_RELEVANCE_SCORE and (t_hit or d_hit)
+    # Single-token or very short topics: preserve keyword-sum scoring with MIN_RELEVANCE_SCORE gate.
+    if len(meaningful) < 2:
+        tokens = topic_keywords_for_relevance(topic)
+        if not tokens:
+            return min(100, 40 + 30 + 20 + 10), True
+
+        t_hit = bool(_title_tokens(title) & tokens)
+        d_hit = bool(_title_tokens(desc) & tokens)
+        h_hit = bool(_title_tokens(head) & tokens)
+
+        score = (40 if t_hit else 0) + (30 if d_hit else 0) + (20 if h_hit else 0) + 10
+        score = min(100, score)
+        passes = score >= MIN_RELEVANCE_SCORE and (t_hit or d_hit)
+        return score, passes
+
+    # Multi-word topic
+    if not _title_or_description_covers_multiword_topic(topic, title, desc, meaningful):
+        return 0, False
+
+    exact_title = bool(nt and nt in title.lower())
+    if exact_title:
+        title_pts = 60
+    elif _strong_topic_phrase_in_title(topic, title, meaningful):
+        title_pts = 40
+    else:
+        overlap = _title_tokens(title) & set(meaningful)
+        n_overlap = len(overlap)
+        if n_overlap >= 2:
+            title_pts = 20
+        elif n_overlap == 1:
+            title_pts = 10
+        else:
+            title_pts = 0
+
+    desc_pts = _multiword_field_points(desc, meaningful, 30, 15)
+    head_pts = _multiword_field_points(head, meaningful, 20, 10)
+    score = min(100, title_pts + desc_pts + head_pts + 10)
+    passes = score >= MIN_RELEVANCE_SCORE
     return score, passes
 
 

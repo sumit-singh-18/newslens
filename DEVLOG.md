@@ -567,3 +567,14 @@ Post-fetch filtering missed many **NewsAPI** off-topic hits; scoring before pers
 
 ### Verification
 - **`npm run build`** in **`frontend/`**: success (`bundle.js` updated).
+
+## [2026-05-04] - Relevance scoring: phrase proximity & collision guardrails
+
+### What changed
+- **`backend/news_fetcher.py`**: **`MIN_RELEVANCE_SCORE`** lowered to **20**. Multi-word topics use **meaningful tokens** (length **≥4**, or length **3** when not in a short stoplist—so **war** is kept). Title scoring: **+60** when the full normalized topic string appears in the title; else **+40** when two tokens appear within **5** word positions, adjacent generated phrases / hyphen pairs match, or curated expansion phrases hit (e.g. **right to repair**, **trade war**, **digital warfare**); **+20** / **+10** when two or one meaningful tokens appear in the title; description and body preview use tiered points when multiple tokens appear. **Context rejection** drops repair+diplomacy (**relations**, **bilateral**, …), figurative **war** headlines (**star wars**, **price war**, …) unless the query itself names those phrases, and **digital warfare** diplomacy-only headlines without cyber hints. Multi-word rows must still match **≥2** meaningful tokens (or exact topic / phrase expansion) in **title ∪ description** before scoring—body alone cannot pass (preserves existing tests).
+- **`backend/tests/test_relevance_scoring.py`**: Added cases for diplomatic **repair**, **John Deere** repair, **Star Wars** vs **trade war**, diplomatic summit vs **digital warfare**, and exact-topic boost.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass (**22** tests).
+- Cleared **`articles`**, **`article_scores`**, **`topic_analysis`**, **`topic_outlet_framing`** via **`SessionLocal`** script.
+- **`npm run build`** in **`frontend/`**: success.
