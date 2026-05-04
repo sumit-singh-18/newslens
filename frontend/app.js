@@ -66,6 +66,7 @@ const CHART_MARGIN_SENTIMENT = { top: 8, right: 16, bottom: 80, left: 16 };
 const CHART_LEGEND_WRAPPER = { paddingTop: "20px", fontSize: "12px" };
 
 const CHART_FIXED_HEIGHT = 400;
+const CHART_MIN_HEIGHT = 350;
 
 const CHART_DATE_MONTHS = [
   "Jan",
@@ -125,9 +126,12 @@ const CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
 /** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
 const MISSING_ANGLE_UNAVAILABLE_COPY =
   "Editorial analysis temporarily unavailable. Check back shortly.";
+const MISSING_ANGLE_QUOTA_LIMITED_COPY =
+  "Missing Angle: AI Analysis currently at capacity. Retrying in 60s...";
 
 function missingAngleIsUnavailableUserFacing(ma) {
   if (!ma || typeof ma !== "object") return true;
+  if (String(ma.analysis_status ?? "").toLowerCase() === "quota_limited") return true;
   const rawVal = ma.value;
   const valueMissing =
     rawVal == null || (typeof rawVal === "string" && rawVal.trim() === "");
@@ -138,6 +142,13 @@ function missingAngleIsUnavailableUserFacing(ma) {
 }
 
 function missingAnglePresentationalCopy(ma) {
+  const analysisStatus = String(ma?.analysis_status ?? "").toLowerCase();
+  if (analysisStatus === "quota_limited") {
+    return {
+      body: MISSING_ANGLE_QUOTA_LIMITED_COPY,
+      reasoning: MISSING_ANGLE_QUOTA_LIMITED_COPY,
+    };
+  }
   if (missingAngleIsUnavailableUserFacing(ma)) {
     return {
       body: MISSING_ANGLE_UNAVAILABLE_COPY,
@@ -315,6 +326,7 @@ function normalizeMissingAngleBlock(ma) {
       reasoning: "",
       confidence: null,
       from_cache: false,
+      analysis_status: null,
       error: false,
       error_message: null,
     };
@@ -330,6 +342,7 @@ function normalizeMissingAngleBlock(ma) {
       ma.reasoning == null ? "" : typeof ma.reasoning === "string" ? ma.reasoning : String(ma.reasoning),
     confidence: ma.confidence ?? null,
     from_cache: Boolean(ma.from_cache),
+    analysis_status: ma.analysis_status == null ? null : String(ma.analysis_status),
     error: Boolean(ma.error),
     error_message: ma.error_message == null ? null : String(ma.error_message),
   };
@@ -467,11 +480,15 @@ function spectrumSegmentWidths(biasDistribution, outlets) {
 }
 
 function assignSpectrumLanes(markers, minGapPct) {
+  const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const sorted = [...markers].sort((a, b) => a.score - b.score);
   const laneLastX = [];
   const maxLane = 12;
   return sorted.map((m) => {
-    const x = Math.max(0, Math.min(1, m.score)) * 100;
+    // Visual multiplier so small differences don't visually collapse near center.
+    const s = clamp(m.score, -1, 1);
+    const visualPosition = (s * 1.5 * 50) + 50;
+    const x = clamp(visualPosition, 5, 95);
     let L = 0;
     while (L < maxLane - 1 && laneLastX[L] !== undefined && x - laneLastX[L] < minGapPct) {
       L += 1;
@@ -616,15 +633,15 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
     );
     const scored = raw.map((o) => ({
       outlet: o,
-      score: Math.max(0, Math.min(1, o.avg_bias_score)),
+      score: Math.max(-1, Math.min(1, o.avg_bias_score)),
     }));
-    return assignSpectrumLanes(scored, 5.5);
+    return assignSpectrumLanes(scored, 4);
   }, [list]);
 
   const stripHeight = useMemo(() => {
     const maxLane = placedMarkers.reduce((m, x) => Math.max(m, x.lane), -1);
     const lanes = maxLane < 0 ? 0 : maxLane + 1;
-    return 36 + lanes * 16;
+    return 36 + lanes * 15;
   }, [placedMarkers]);
 
   return (
@@ -657,7 +674,7 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
             <div
               key={outlet.source}
               className="spectrum-marker"
-              style={{ left: `${xPct}%`, top: 4 + lane * 16 }}
+              style={{ left: `${xPct}%`, top: 4 + lane * 15 }}
               title={`${outlet.source} — bias score ${score.toFixed(3)}`}
             >
               <span
@@ -704,6 +721,45 @@ function SparklineSeries({ series, color }) {
   );
 }
 
+const SENTIMENT_COLORS = {
+  positive: "#10b981",
+  neutral: "#94a3b8",
+  negative: "#ef4444",
+};
+
+function sentimentKeyFromLabel(label) {
+  const s = String(label ?? "").trim().toLowerCase();
+  if (s.includes("pos")) return "positive";
+  if (s.includes("neg")) return "negative";
+  if (s.includes("neu")) return "neutral";
+  return "neutral";
+}
+
+function sentimentBadgeClass(label) {
+  const k = sentimentKeyFromLabel(label);
+  if (k === "positive") return "badge sentiment-badge sentiment-positive";
+  if (k === "negative") return "badge sentiment-badge sentiment-negative";
+  return "badge sentiment-badge sentiment-neutral";
+}
+
+const OUTLET_METHODOLOGY = {
+  Reuters: "International news organization focused on objective, fact-based reporting.",
+  "Associated Press": "Global news cooperative emphasizing straight reporting and verified facts.",
+  "BBC News": "Public-service broadcaster centered on impartial reporting and global context.",
+  Bloomberg: "Business-first newsroom prioritizing markets, data, and financial context.",
+  "The Wall Street Journal": "Business-focused reporting with emphasis on markets and economic policy.",
+  "The New York Times": "Broad national and global reporting with investigative and explanatory depth.",
+  "The Washington Post": "National political reporting and investigations with a focus on public accountability.",
+  CNN: "Breaking-news driven coverage emphasizing speed, context, and live reporting.",
+  MSNBC: "Opinion-forward cable coverage with progressive-leaning commentary and analysis.",
+  "Fox News": "Opinion-forward cable coverage with conservative-leaning commentary and analysis.",
+  NPR: "Public media reporting with an explanatory style and emphasis on on-the-ground sourcing.",
+  "ABC News": "Broadcast newsroom focused on national headlines, breaking events, and explanatory segments.",
+  "CBS News": "Broadcast newsroom focused on national headlines, breaking events, and explanatory segments.",
+  "NBC News": "Broadcast newsroom focused on national headlines, breaking events, and explanatory segments.",
+  "The Guardian": "International reporting with an explanatory style and strong editorial voice.",
+};
+
 function SourceProfileSection({ outletName }) {
   const [open, setOpen] = useState(false);
   const q = useQuery({
@@ -712,49 +768,63 @@ function SourceProfileSection({ outletName }) {
     enabled: open,
     staleTime: 60_000,
   });
+  const methodology = OUTLET_METHODOLOGY[outletName] || `${outletName}: Methodology summary unavailable.`;
 
   return (
     <div className="source-profile-wrap">
-      <button type="button" className="source-profile-toggle" onClick={() => setOpen(!open)}>
-        <span>Source Profile</span>
+      <button
+        type="button"
+        className="source-profile-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="source-profile-toggle-left">
+          <span className="source-profile-info-icon" aria-hidden>
+            i
+          </span>
+          <span>Source Profile</span>
+        </span>
         <span className="chevron" aria-hidden>
           {open ? "▼" : "▶"}
         </span>
       </button>
-      {open ? (
-        <div className="source-profile-body">
-          {q.isLoading ? <p className="micro-muted">Loading historical stats…</p> : null}
-          {q.isError ? (
-            <p className="micro-error">Could not load profile: {q.error?.message || "Error"}</p>
-          ) : null}
-          {q.data ? (
-            <div className="source-profile-inner">
-              <div className="stat-pills">
-                <div className="stat-pill">
-                  <span>Avg bias</span>
-                  <strong>{q.data.avg_bias_score != null ? q.data.avg_bias_score.toFixed(3) : "—"}</strong>
+      <div className={`source-profile-body${open ? " open" : ""}`}>
+        <p className="source-profile-methodology">{methodology}</p>
+        {open ? (
+          <>
+            {q.isLoading ? <p className="micro-muted">Loading historical stats…</p> : null}
+            {q.isError ? (
+              <p className="micro-error">Could not load profile: {q.error?.message || "Error"}</p>
+            ) : null}
+            {q.data ? (
+              <div className="source-profile-inner">
+                <div className="stat-pills">
+                  <div className="stat-pill">
+                    <span>Avg bias</span>
+                    <strong>{q.data.avg_bias_score != null ? q.data.avg_bias_score.toFixed(3) : "—"}</strong>
+                  </div>
+                  <div className="stat-pill">
+                    <span>Avg sentiment</span>
+                    <strong>
+                      {q.data.avg_sentiment_score != null ? q.data.avg_sentiment_score.toFixed(3) : "—"}
+                    </strong>
+                  </div>
+                  <div className="stat-pill">
+                    <span>Articles (all topics)</span>
+                    <strong>{q.data.article_count ?? 0}</strong>
+                  </div>
                 </div>
-                <div className="stat-pill">
-                  <span>Avg sentiment</span>
-                  <strong>
-                    {q.data.avg_sentiment_score != null ? q.data.avg_sentiment_score.toFixed(3) : "—"}
-                  </strong>
-                </div>
-                <div className="stat-pill">
-                  <span>Articles (all topics)</span>
-                  <strong>{q.data.article_count ?? 0}</strong>
-                </div>
+                {q.data.series?.length ? (
+                  <div className="sparkline-row">
+                    <span className="micro-muted">Bias (daily, {DEFAULT_SERIES_LABEL})</span>
+                    <SparklineSeries series={q.data.series} color={OUTLET_COLORS[outletName] || "#111827"} />
+                  </div>
+                ) : null}
               </div>
-              {q.data.series?.length ? (
-                <div className="sparkline-row">
-                  <span className="micro-muted">Bias (daily, {DEFAULT_SERIES_LABEL})</span>
-                  <SparklineSeries series={q.data.series} color={OUTLET_COLORS[outletName] || "#111827"} />
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+            ) : null}
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -769,7 +839,14 @@ function OutletCard({ outlet, compareSelected, onCompareClick }) {
           Compare
         </button>
       </div>
-      <p className={biasBadgeClass(outlet.dominant_bias_label)}>{outlet.dominant_bias_label || "No bias label"}</p>
+      <div className="outlet-badges">
+        <p className={biasBadgeClass(outlet.dominant_bias_label)}>
+          {outlet.dominant_bias_label || "No bias label"}
+        </p>
+        <p className={sentimentBadgeClass(outlet.dominant_sentiment_label)}>
+          {outlet.dominant_sentiment_label || "Neutral"}
+        </p>
+      </div>
       <p className="body">{outletFramingBody(outlet)}</p>
       <div className="metric-row">
         <span>Sentiment score</span>
@@ -931,7 +1008,7 @@ function SentimentDistribution({ outlets }) {
         <span>Positive / neutral / negative by outlet</span>
       </div>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={CHART_FIXED_HEIGHT}>
+        <ResponsiveContainer width="100%" height="100%" minHeight={CHART_MIN_HEIGHT}>
           <BarChart
             data={data}
             margin={CHART_MARGIN_SENTIMENT}
@@ -959,9 +1036,19 @@ function SentimentDistribution({ outlets }) {
               layout="horizontal"
               wrapperStyle={CHART_LEGEND_WRAPPER}
             />
-            <Bar dataKey="positive" stackId="sentiment" fill="#10B981" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="neutral" stackId="sentiment" fill="#9CA3AF" radius={[0, 0, 0, 0]} />
-            <Bar dataKey="negative" stackId="sentiment" fill="#EF4444" radius={[0, 0, 4, 4]} />
+            <Bar
+              dataKey="positive"
+              stackId="sentiment"
+              fill={SENTIMENT_COLORS.positive}
+              radius={[4, 4, 0, 0]}
+            />
+            <Bar dataKey="neutral" stackId="sentiment" fill={SENTIMENT_COLORS.neutral} radius={[0, 0, 0, 0]} />
+            <Bar
+              dataKey="negative"
+              stackId="sentiment"
+              fill={SENTIMENT_COLORS.negative}
+              radius={[0, 0, 4, 4]}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -995,7 +1082,7 @@ function Timeline({ timeline, outlets }) {
         <span>Bias score trend over the last 7 days</span>
       </div>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={CHART_FIXED_HEIGHT}>
+        <ResponsiveContainer width="100%" height="100%" minHeight={CHART_MIN_HEIGHT}>
           <LineChart data={rows} margin={CHART_MARGIN_LINE_AREA}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
@@ -1061,7 +1148,7 @@ function TopicTrendChart({ topic, outlets }) {
       {q.isError ? <p className="chart-status error">Could not load trend: {q.error?.message}</p> : null}
       {q.isSuccess ? (
         <div className="chart-wrap">
-          <ResponsiveContainer width="100%" height={CHART_FIXED_HEIGHT}>
+          <ResponsiveContainer width="100%" height="100%" minHeight={CHART_MIN_HEIGHT}>
             <AreaChart data={series} margin={CHART_MARGIN_LINE_AREA}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis
@@ -1195,6 +1282,9 @@ function ResultsHeader({
     };
   }, [spectrumExtremes, outlets]);
   const teaser = useMemo(() => {
+    if (String(missingAngle?.analysis_status ?? "").toLowerCase() === "quota_limited") {
+      return MISSING_ANGLE_QUOTA_LIMITED_COPY;
+    }
     if (missingAngleIsUnavailableUserFacing(missingAngle)) {
       return MISSING_ANGLE_UNAVAILABLE_COPY;
     }

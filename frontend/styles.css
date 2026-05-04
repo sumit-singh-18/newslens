@@ -2,6 +2,9 @@
   --left-blue: #3b82f6;
   --neutral-gray: #9ca3af;
   --right-red: #ef4444;
+  --sentiment-positive: #10b981;
+  --sentiment-neutral: #94a3b8;
+  --sentiment-negative: #ef4444;
   --cta-navy: #1a1a2e;
   --ink: #111827;
   --muted: #6b7280;
@@ -477,8 +480,100 @@ h1 {
   cursor: pointer;
 }
 
+.source-profile-toggle-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-profile-info-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #334155;
+  background: rgba(226, 232, 240, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  flex-shrink: 0;
+}
+
 .source-profile-body {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    max-height 220ms ease,
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.source-profile-body.open {
+  max-height: 320px;
+  opacity: 1;
+  transform: translateY(0);
   padding-bottom: 8px;
+}
+
+.source-profile-methodology {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.outlet-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.outlet-badges .badge {
+  margin: 0;
+}
+
+.sentiment-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sentiment-positive {
+  color: #ffffff;
+  background: var(--sentiment-positive);
+  border: 1px solid var(--sentiment-positive);
+}
+
+.sentiment-neutral {
+  color: #0f172a;
+  background: var(--sentiment-neutral);
+  border: 1px solid var(--sentiment-neutral);
+}
+
+.sentiment-negative {
+  color: #ffffff;
+  background: var(--sentiment-negative);
+  border: 1px solid var(--sentiment-negative);
+}
+
+.chart-wrap {
+  width: 100%;
+  min-height: 350px;
+}
+
+.chart-wrap .recharts-responsive-container {
+  min-height: 350px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-profile-body {
+    transition: none;
+  }
 }
 
 .stat-pills {
@@ -960,11 +1055,6 @@ h3 {
 
 .chart-card {
   padding: 32px;
-}
-
-.chart-wrap {
-  width: 100%;
-  min-height: 0;
 }
 
 .chart-wrap .recharts-responsive-container {
