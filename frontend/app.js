@@ -57,23 +57,15 @@ function normalizeCoverageStatus(raw) {
   return COVERAGE_STATUS.HIGH;
 }
 
-/** Bottom margin for rotated X ticks; right reserved for vertical outlet legend */
-const CHART_MARGIN_RIGHT_LEGEND = { top: 8, right: 168, bottom: 30, left: 8 };
+/** Narrative timeline & coverage: room for rotated dates + bottom legend */
+const CHART_MARGIN_LINE_AREA = { top: 8, right: 16, bottom: 64, left: 16 };
 
-/** Sentiment chart: room for angled outlet ticks + bottom-centered legend (8px grid) */
-const CHART_MARGIN_SENTIMENT = { top: 8, right: 8, bottom: 56, left: 8 };
+/** Sentiment: outlet ticks + bottom legend clearance */
+const CHART_MARGIN_SENTIMENT = { top: 8, right: 16, bottom: 80, left: 16 };
 
-const LEGEND_RIGHT_STYLE = { paddingLeft: "20px", fontSize: "11px", maxWidth: "150px" };
+const CHART_LEGEND_WRAPPER = { paddingTop: "20px", fontSize: "12px" };
 
-const LEGEND_SENTIMENT_STYLE = {
-  paddingTop: "8px",
-  fontSize: "11px",
-  width: "100%",
-  display: "flex",
-  justifyContent: "center",
-  gap: "8px",
-  flexWrap: "wrap",
-};
+const CHART_FIXED_HEIGHT = 400;
 
 const CHART_DATE_MONTHS = [
   "Jan",
@@ -108,33 +100,27 @@ function chartTooltipLabelFormatter(value) {
   return s;
 }
 
-/** Timeline: legend/lines only for outlets with ≥1 finite bias point in `rows`. */
-function outletsWithTimelineSeriesData(rows, outletSources) {
+/**
+ * Build per-outlet series totals from chart rows; keep only outlets with totalValue > 0.
+ * Mirrors `data.filter((series) => series.totalValue > 0)` for Recharts legend fidelity.
+ */
+function outletKeysWithPositiveTotals(rows, outletSources, mode) {
   const list = Array.isArray(rows) ? rows : [];
-  const uniq = [...new Set(outletSources)];
-  return uniq.filter((src) =>
-    list.some((row) => {
-      if (!row || typeof row !== "object") return false;
-      const v = row[src];
-      return v != null && Number.isFinite(Number(v));
-    })
-  );
+  const series = [...new Set(outletSources)].map((source) => {
+    let totalValue = 0;
+    for (const row of list) {
+      if (!row || typeof row !== "object") continue;
+      const raw = row[source];
+      if (raw == null || !Number.isFinite(Number(raw))) continue;
+      const n = Number(raw);
+      totalValue += mode === "volume" ? Math.max(0, n) : Math.abs(n);
+    }
+    return { source, totalValue };
+  });
+  return series.filter((s) => s.totalValue > 0).map((s) => s.source);
 }
 
-/** Coverage volume: legend/areas only where some day has count > 0. */
-function outletsWithVolumeSeriesData(rows, outletSources) {
-  const list = Array.isArray(rows) ? rows : [];
-  const uniq = [...new Set(outletSources)];
-  return uniq.filter((src) =>
-    list.some((row) => {
-      if (!row || typeof row !== "object") return false;
-      const v = Number(row[src]);
-      return Number.isFinite(v) && v > 0;
-    })
-  );
-}
-
-const CHART_X_TICK = { fontSize: 10 };
+const CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
 
 /** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
 const MISSING_ANGLE_UNAVAILABLE_COPY =
@@ -920,18 +906,23 @@ function HeadlineComparison({ outlets }) {
 }
 
 function SentimentDistribution({ outlets }) {
-  const data = useMemo(
-    () =>
-      (outlets || [])
-        .filter((outlet) => (outlet.article_count || 0) > 0)
-        .map((outlet) => ({
+  const data = useMemo(() => {
+    const rows = (outlets || [])
+      .filter((outlet) => (outlet.article_count || 0) > 0)
+      .map((outlet) => {
+        const positive = sentimentBucket(outlet.sentiment_labels, ["Positive", "positive"]);
+        const neutral = sentimentBucket(outlet.sentiment_labels, ["Neutral", "neutral"]);
+        const negative = sentimentBucket(outlet.sentiment_labels, ["Negative", "negative"]);
+        return {
           outlet: outlet.source || "Unknown",
-          positive: sentimentBucket(outlet.sentiment_labels, ["Positive", "positive"]),
-          neutral: sentimentBucket(outlet.sentiment_labels, ["Neutral", "neutral"]),
-          negative: sentimentBucket(outlet.sentiment_labels, ["Negative", "negative"]),
-        })),
-    [outlets]
-  );
+          positive,
+          neutral,
+          negative,
+          totalValue: positive + neutral + negative,
+        };
+      });
+    return rows.filter((series) => series.totalValue > 0).map(({ totalValue, ...row }) => row);
+  }, [outlets]);
 
   return (
     <section className="card chart-card">
@@ -940,8 +931,14 @@ function SentimentDistribution({ outlets }) {
         <span>Positive / neutral / negative by outlet</span>
       </div>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" aspect={2.2}>
-          <BarChart data={data} margin={CHART_MARGIN_SENTIMENT} barCategoryGap="30%">
+        <ResponsiveContainer width="100%" height={CHART_FIXED_HEIGHT}>
+          <BarChart
+            data={data}
+            margin={CHART_MARGIN_SENTIMENT}
+            barCategoryGap="24%"
+            barSize={40}
+            stackOffset="sign"
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="outlet"
@@ -949,15 +946,22 @@ function SentimentDistribution({ outlets }) {
               textAnchor="end"
               height={60}
               interval="preserveStartEnd"
-              minTickGap={20}
-              tick={CHART_X_TICK}
+              minTickGap={40}
+              stroke="#888"
+              tick={CHART_AXIS_TICK}
             />
-            <YAxis tick={CHART_X_TICK} allowDecimals={false} />
+            <YAxis stroke="#888" tick={CHART_AXIS_TICK} allowDecimals={false} />
             <Tooltip labelFormatter={chartTooltipLabelFormatter} />
-            <Legend verticalAlign="bottom" align="center" layout="horizontal" wrapperStyle={LEGEND_SENTIMENT_STYLE} />
-            <Bar dataKey="positive" fill="#10B981" radius={[6, 6, 0, 0]} />
-            <Bar dataKey="neutral" fill="#9CA3AF" radius={[6, 6, 0, 0]} />
-            <Bar dataKey="negative" fill="#EF4444" radius={[6, 6, 0, 0]} />
+            <Legend
+              iconType="circle"
+              verticalAlign="bottom"
+              align="center"
+              layout="horizontal"
+              wrapperStyle={CHART_LEGEND_WRAPPER}
+            />
+            <Bar dataKey="positive" stackId="sentiment" fill="#10B981" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="neutral" stackId="sentiment" fill="#9CA3AF" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="negative" stackId="sentiment" fill="#EF4444" radius={[0, 0, 4, 4]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -967,12 +971,11 @@ function SentimentDistribution({ outlets }) {
 
 function Timeline({ timeline, outlets }) {
   const rows = Array.isArray(timeline) ? timeline : [];
-  const activeOutlets = (outlets || []).filter((outlet) => (outlet.article_count || 0) > 0);
   const lineSources = useMemo(() => {
     const sources = (outlets || [])
       .filter((o) => (o.article_count || 0) > 0)
       .map((o) => o.source);
-    return outletsWithTimelineSeriesData(rows, sources);
+    return outletKeysWithPositiveTotals(rows, sources, "bias");
   }, [rows, outlets]);
   if (!rows.length) {
     return (
@@ -992,8 +995,8 @@ function Timeline({ timeline, outlets }) {
         <span>Bias score trend over the last 7 days</span>
       </div>
       <div className="chart-wrap">
-        <ResponsiveContainer width="100%" aspect={2.2}>
-          <LineChart data={rows} margin={CHART_MARGIN_RIGHT_LEGEND}>
+        <ResponsiveContainer width="100%" height={CHART_FIXED_HEIGHT}>
+          <LineChart data={rows} margin={CHART_MARGIN_LINE_AREA}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="date"
@@ -1001,17 +1004,19 @@ function Timeline({ timeline, outlets }) {
               textAnchor="end"
               height={60}
               interval="preserveStartEnd"
-              minTickGap={20}
+              minTickGap={40}
+              stroke="#888"
               tickFormatter={formatChartAxisDate}
-              tick={CHART_X_TICK}
+              tick={CHART_AXIS_TICK}
             />
-            <YAxis domain={[-1, 1]} tick={CHART_X_TICK} />
+            <YAxis domain={[-1, 1]} stroke="#888" tick={CHART_AXIS_TICK} />
             <Tooltip labelFormatter={chartTooltipLabelFormatter} />
             <Legend
-              layout="vertical"
-              align="right"
-              verticalAlign="middle"
-              wrapperStyle={LEGEND_RIGHT_STYLE}
+              iconType="circle"
+              verticalAlign="bottom"
+              align="center"
+              layout="horizontal"
+              wrapperStyle={CHART_LEGEND_WRAPPER}
             />
             {lineSources.map((source) => (
               <Line
@@ -1032,8 +1037,6 @@ function Timeline({ timeline, outlets }) {
 }
 
 function TopicTrendChart({ topic, outlets }) {
-  const ol = Array.isArray(outlets) ? outlets : [];
-  const activeOutlets = ol.filter((outlet) => (outlet.article_count || 0) > 0);
   const q = useQuery({
     queryKey: ["topic-trend", topic, 7],
     queryFn: () => fetchTopicTrend(topic, 7),
@@ -1045,7 +1048,7 @@ function TopicTrendChart({ topic, outlets }) {
   const areaSources = useMemo(() => {
     const list = Array.isArray(outlets) ? outlets : [];
     const sources = list.filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
-    return outletsWithVolumeSeriesData(series, sources);
+    return outletKeysWithPositiveTotals(series, sources, "volume");
   }, [series, outlets]);
 
   return (
@@ -1058,8 +1061,8 @@ function TopicTrendChart({ topic, outlets }) {
       {q.isError ? <p className="chart-status error">Could not load trend: {q.error?.message}</p> : null}
       {q.isSuccess ? (
         <div className="chart-wrap">
-          <ResponsiveContainer width="100%" aspect={2.2}>
-            <AreaChart data={series} margin={CHART_MARGIN_RIGHT_LEGEND}>
+          <ResponsiveContainer width="100%" height={CHART_FIXED_HEIGHT}>
+            <AreaChart data={series} margin={CHART_MARGIN_LINE_AREA}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis
                 dataKey="date"
@@ -1067,17 +1070,19 @@ function TopicTrendChart({ topic, outlets }) {
                 textAnchor="end"
                 height={60}
                 interval="preserveStartEnd"
-                minTickGap={20}
+                minTickGap={40}
+                stroke="#888"
                 tickFormatter={formatChartAxisDate}
-                tick={CHART_X_TICK}
+                tick={CHART_AXIS_TICK}
               />
-              <YAxis allowDecimals={false} tick={CHART_X_TICK} />
+              <YAxis allowDecimals={false} stroke="#888" tick={CHART_AXIS_TICK} />
               <Tooltip labelFormatter={chartTooltipLabelFormatter} />
               <Legend
-                layout="vertical"
-                align="right"
-                verticalAlign="middle"
-                wrapperStyle={LEGEND_RIGHT_STYLE}
+                iconType="circle"
+                verticalAlign="bottom"
+                align="center"
+                layout="horizontal"
+                wrapperStyle={CHART_LEGEND_WRAPPER}
               />
               {areaSources.map((source) => (
                 <Area

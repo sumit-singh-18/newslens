@@ -6,9 +6,10 @@
   --ink: #111827;
   --muted: #6b7280;
   --surface: #ffffff;
-  --card-bg: rgba(255, 255, 255, 0.6);
-  --card-border: 1px solid rgba(255, 255, 255, 0.3);
-  --card-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  --card-bg: rgba(255, 255, 255, 0.65);
+  --card-border: 1px solid rgba(255, 255, 255, 0.4);
+  --card-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.08);
+  --glass-2: blur(20px) saturate(160%);
 }
 
 * {
@@ -27,7 +28,7 @@ body {
 }
 
 .page {
-  max-width: 1120px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 24px 24px 96px;
 }
@@ -133,7 +134,7 @@ h1 {
   padding: 16px 16px;
   font-size: 1rem;
   background: var(--card-bg);
-  backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: var(--glass-2);
   box-shadow: var(--card-shadow);
 }
 
@@ -185,7 +186,7 @@ h1 {
 .suggested-topics-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   justify-content: center;
 }
 
@@ -196,7 +197,7 @@ h1 {
   font-family: inherit;
   font-size: 0.74rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   cursor: pointer;
   color: #374151;
@@ -236,6 +237,9 @@ h1 {
 .results-stack {
   display: grid;
   gap: 24px;
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
 }
 
 .results-header {
@@ -292,11 +296,11 @@ h1 {
 .share-card-capture {
   width: 400px;
   padding: 32px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 24px;
-  backdrop-filter: blur(16px) saturate(180%);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: var(--card-shadow);
   text-align: left;
 }
 
@@ -557,22 +561,22 @@ h1 {
 }
 
 .card {
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 24px;
-  backdrop-filter: blur(16px) saturate(180%);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: var(--card-shadow);
 }
 
 .coverage-shortfall {
   padding: 24px 28px;
   margin-bottom: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-left: 4px solid #6366f1;
   border-radius: 24px;
-  background: linear-gradient(to right, rgba(238, 242, 255, 0.5), rgba(255, 255, 255, 0.35)), rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(16px) saturate(180%);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  background: linear-gradient(to right, rgba(238, 242, 255, 0.52), rgba(255, 255, 255, 0.38)), rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: var(--card-shadow);
 }
 
 .coverage-shortfall-msg {
@@ -588,12 +592,12 @@ h1 {
   gap: 16px;
   padding: 16px 24px;
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: linear-gradient(rgba(251, 191, 36, 0.14), rgba(251, 191, 36, 0.14)), rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: linear-gradient(rgba(251, 191, 36, 0.14), rgba(251, 191, 36, 0.14)), rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px) saturate(160%);
   box-shadow:
-    0 0 0 1px rgba(245, 158, 11, 0.18),
-    0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    0 0 0 1px rgba(245, 158, 11, 0.16),
+    var(--card-shadow);
 }
 
 .developing-pulse-icon {
@@ -921,12 +925,12 @@ h3 {
 }
 
 .headline-item {
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 24px;
   padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(16px) saturate(180%);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: var(--card-shadow);
 }
 
 .headline-source {
@@ -969,11 +973,12 @@ h3 {
 
 .missing-angle {
   padding: 32px;
-  background: linear-gradient(155deg, rgba(238, 244, 255, 0.45) 12%, rgba(255, 255, 255, 0.2) 100%),
-    rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  border-radius: 24px;
+  background: linear-gradient(155deg, rgba(238, 244, 255, 0.48) 12%, rgba(255, 255, 255, 0.18) 100%),
+    rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: var(--card-shadow);
 }
 
 .missing-angle > p {
