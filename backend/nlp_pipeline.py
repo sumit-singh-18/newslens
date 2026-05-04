@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
@@ -13,35 +14,57 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipe
 from .bias_utils import bias_label_from_axis
 from .database import Article, ArticleScore, normalize_topic
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment"
 DEFAULT_BIAS_MODEL = "bucketresearch/politicalBiasBERT"
 
-# Blend HF axis score with lexical cues (HF alone often collapses to Center).
-HF_BIAS_BLEND = 0.4
-KEYWORD_BIAS_BLEND = 0.6
+# Blend HF axis score with lexical framing cues (keywords = editorial framing, not topic).
+HF_BIAS_BLEND = 0.6
+KEYWORD_BIAS_BLEND = 0.4
 
 LEFT_BIAS_KEYWORDS = (
-    "climate justice",
     "equity",
     "systemic",
     "marginalized",
     "progressive",
-    "regulation",
+    "social justice",
+    "inequality",
+    "oppression",
     "universal",
-    "social",
+    "regulation",
+    "climate crisis",
+    "workers rights",
+    "living wage",
+    "corporate greed",
+    "accountability",
+    "reform",
+    "vulnerable communities",
+    "human rights",
+    "public funding",
+    "wealth gap",
 )
 
 RIGHT_BIAS_KEYWORDS = (
-    "second amendment",
-    "free market",
-    "deregulation",
-    "socialism",
-    "conservative",
-    "tradition",
-    "patriot",
-    "border",
     "freedom",
+    "liberty",
+    "deregulation",
+    "free market",
+    "big government",
+    "socialism",
+    "patriot",
+    "tradition",
+    "second amendment",
+    "border security",
+    "law and order",
+    "fiscal responsibility",
+    "government overreach",
+    "private sector",
+    "individual rights",
+    "conservative",
+    "taxpayer",
+    "radical left",
+    "mainstream media",
 )
 
 
@@ -257,6 +280,15 @@ class NLPPipeline:
             raise RuntimeError("Article and analysis counts do not match.")
 
         for article, analysis in zip(articles, analyses):
+            if analysis["bias_label"] == "Center":
+                blend = (analysis.get("raw_scores") or {}).get("bias_blend") or {}
+                logger.info(
+                    "bias_center_hf_debug article_id=%s hf_axis=%s keyword_axis=%s raw_bias=%s",
+                    article.id,
+                    blend.get("hf_axis"),
+                    blend.get("keyword_axis"),
+                    (analysis.get("raw_scores") or {}).get("bias"),
+                )
             db.add(
                 ArticleScore(
                     article_id=article.id,
@@ -293,6 +325,15 @@ class NLPPipeline:
             if len(chunk) != len(analyses):
                 raise RuntimeError("Article and analysis counts do not match.")
             for article, analysis in zip(chunk, analyses):
+                if analysis["bias_label"] == "Center":
+                    blend = (analysis.get("raw_scores") or {}).get("bias_blend") or {}
+                    logger.info(
+                        "bias_center_hf_debug article_id=%s hf_axis=%s keyword_axis=%s raw_bias=%s",
+                        article.id,
+                        blend.get("hf_axis"),
+                        blend.get("keyword_axis"),
+                        (analysis.get("raw_scores") or {}).get("bias"),
+                    )
                 db.add(
                     ArticleScore(
                         article_id=article.id,

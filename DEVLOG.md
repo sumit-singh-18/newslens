@@ -494,3 +494,15 @@ Niche queries (e.g. **digital warfare**) were over-pruned; long-form pieces and 
 ### Verification
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
 - **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.
+
+## [2026-05-04] - Issue 2: Bias keyword framing vs topic + HF blend
+
+### What changed
+- **`backend/nlp_pipeline.py`**: Replaced left/right keyword lists with **editorial framing** cues only (equity, systemic, universal healthcare-adjacent phrases, free market, law and order, etc.); removed topic-ish terms so military/security vocabulary no longer steers the keyword axis right. Blend weights are now **`HF_BIAS_BLEND=0.6`**, **`KEYWORD_BIAS_BLEND=0.4`** so **`politicalBiasBERT`** dominates keywords. When the final label is **Center**, **`logger.info`** emits **`bias_center_hf_debug`** with **`article_id`**, **`hf_axis`**, **`keyword_axis`**, and HuggingFace **`raw_bias`** probabilities during **`score_topic_articles`** / **`rescore_all_articles`** for diagnosis when the UI still looks all-neutral.
+
+### Reason
+Topic words (war, defense, cyber, etc.) were miscounted as right-leaning; bias should reflect **how** outlets frame stories, not **what** they are about.
+
+### Verification
+- **`NLPPipeline.get_instance().rescore_all_articles(db)`** after the change; **`DELETE`** from **`topic_outlet_framing`** and **`topic_analysis`** to drop stale cached topic analyses.
+- **`npm run build`** in **`frontend/`**: success.
