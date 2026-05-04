@@ -121,6 +121,172 @@ function outletKeysWithPositiveTotals(rows, outletSources, mode) {
   return series.filter((s) => s.totalValue > 0).map((s) => s.source);
 }
 
+function candidateOutletSources(outlets) {
+  const list = Array.isArray(outlets) ? outlets : [];
+  return list.filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
+}
+
+/** Outlet columns on chart rows (excludes `date`). */
+function chartOutletKeysFromRows(rows) {
+  const keys = new Set();
+  const list = Array.isArray(rows) ? rows : [];
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    for (const k of Object.keys(row)) {
+      if (k !== "date") keys.add(k);
+    }
+  }
+  return [...keys];
+}
+
+function outletKeysForChart(rows, outlets) {
+  const preferred = candidateOutletSources(outlets);
+  return preferred.length > 0 ? preferred : chartOutletKeysFromRows(rows);
+}
+
+/** True when every outlet value is 0, null, or undefined for all rows (non-finite counts as empty). */
+function isCoverageVolumeDatasetEmpty(rows, outlets) {
+  const list = Array.isArray(rows) ? rows : [];
+  const keys = outletKeysForChart(list, outlets);
+  if (!keys.length) return true;
+  if (!list.length) return true;
+  for (const row of list) {
+    for (const key of keys) {
+      const raw = row[key];
+      if (raw == null) continue;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n !== 0) return false;
+    }
+  }
+  return true;
+}
+
+function countDaysWithCoverageVolume(rows, keys) {
+  const list = Array.isArray(rows) ? rows : [];
+  let count = 0;
+  for (const row of list) {
+    if (!row) continue;
+    let dayHas = false;
+    for (const key of keys) {
+      const raw = row[key];
+      if (raw == null) continue;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) {
+        dayHas = true;
+        break;
+      }
+    }
+    if (dayHas) count++;
+  }
+  return count;
+}
+
+/** True when every bias value is null or undefined for all rows (0 is valid bias). */
+function isTimelineBiasDatasetEmpty(rows, outlets) {
+  const list = Array.isArray(rows) ? rows : [];
+  const keys = outletKeysForChart(list, outlets);
+  if (!keys.length) return true;
+  if (!list.length) return true;
+  for (const row of list) {
+    for (const key of keys) {
+      const raw = row[key];
+      if (raw != null && Number.isFinite(Number(raw))) return false;
+    }
+  }
+  return true;
+}
+
+function countDaysWithBiasData(rows, keys) {
+  const list = Array.isArray(rows) ? rows : [];
+  let count = 0;
+  for (const row of list) {
+    if (!row) continue;
+    let dayHas = false;
+    for (const key of keys) {
+      const raw = row[key];
+      if (raw != null && Number.isFinite(Number(raw))) {
+        dayHas = true;
+        break;
+      }
+    }
+    if (dayHas) count++;
+  }
+  return count;
+}
+
+/**
+ * Partial-period hint: show when fewer than 7 day slots or sparse points within a full week.
+ * @param {"coverage" | "timeline"} mode
+ */
+function getChartHistoryPartialMeta(rows, outlets, mode) {
+  const list = Array.isArray(rows) ? rows : [];
+  const keys = outletKeysForChart(list, outlets);
+  if (!keys.length) return { show: false, x: 0 };
+  const daysWithData =
+    mode === "coverage"
+      ? countDaysWithCoverageVolume(list, keys)
+      : countDaysWithBiasData(list, keys);
+  if (daysWithData === 0) return { show: false, x: 0 };
+  const sparse =
+    list.length < 7 || (list.length === 7 && daysWithData < 7);
+  if (!sparse) return { show: false, x: daysWithData };
+  const x = list.length < 7 ? list.length : daysWithData;
+  return { show: true, x };
+}
+
+function ChartHistoryBuildingEmptyState() {
+  return (
+    <div
+      className="chart-history-building-empty"
+      style={{
+        minHeight: CHART_MIN_HEIGHT,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 20px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: "1.35rem", marginBottom: "10px", lineHeight: 1 }} aria-hidden>
+        🕐
+      </div>
+      <h3
+        style={{
+          margin: "0 0 8px",
+          fontSize: "0.98rem",
+          fontWeight: 600,
+          color: "#64748b",
+        }}
+      >
+        Coverage history is building
+      </h3>
+      <p
+        style={{
+          margin: 0,
+          fontSize: "0.86rem",
+          color: "#94a3b8",
+          maxWidth: "26rem",
+          lineHeight: 1.55,
+        }}
+      >
+        This topic was just searched for the first time. Come back tomorrow to see how coverage volume changes
+        across outlets over time.
+      </p>
+    </div>
+  );
+}
+
+function ChartHistoryPartialHint({ x }) {
+  if (x == null || x <= 0 || x >= 7) return null;
+  const dayLabel = x === 1 ? "day" : "days";
+  return (
+    <p className="micro-muted" style={{ textAlign: "center", margin: "10px 0 0" }}>
+      Showing {x} {dayLabel} of data — history builds daily as more searches happen
+    </p>
+  );
+}
+
 const CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
 
 /** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
@@ -1099,14 +1265,19 @@ function Timeline({ timeline, outlets }) {
       .map((o) => o.source);
     return outletKeysWithPositiveTotals(rows, sources, "bias");
   }, [rows, outlets]);
-  if (!rows.length) {
+  const timelineEmpty = useMemo(() => isTimelineBiasDatasetEmpty(rows, outlets), [rows, outlets]);
+  const partialMeta = useMemo(() => getChartHistoryPartialMeta(rows, outlets, "timeline"), [rows, outlets]);
+
+  if (timelineEmpty) {
     return (
       <section className="card chart-card">
         <div className="section-head">
           <h2>Narrative Timeline</h2>
           <span>Bias score trend over the last 7 days</span>
         </div>
-        <p className="chart-status">No timeline data for this window yet.</p>
+        <div className="chart-wrap">
+          <ChartHistoryBuildingEmptyState />
+        </div>
       </section>
     );
   }
@@ -1154,6 +1325,7 @@ function Timeline({ timeline, outlets }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {partialMeta.show ? <ChartHistoryPartialHint x={partialMeta.x} /> : null}
     </section>
   );
 }
@@ -1172,6 +1344,14 @@ function TopicTrendChart({ topic, outlets }) {
     const sources = list.filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
     return outletKeysWithPositiveTotals(series, sources, "volume");
   }, [series, outlets]);
+  const coverageEmpty = useMemo(
+    () => isCoverageVolumeDatasetEmpty(series, outlets),
+    [series, outlets]
+  );
+  const partialMeta = useMemo(
+    () => getChartHistoryPartialMeta(series, outlets, "coverage"),
+    [series, outlets]
+  );
 
   return (
     <section className="card chart-card">
@@ -1182,44 +1362,53 @@ function TopicTrendChart({ topic, outlets }) {
       {q.isLoading ? <p className="chart-status">Loading trend data…</p> : null}
       {q.isError ? <p className="chart-status error">Could not load trend: {q.error?.message}</p> : null}
       {q.isSuccess ? (
-        <div className="chart-wrap">
-          <ResponsiveContainer width="100%" height="100%" minHeight={CHART_MIN_HEIGHT}>
-            <AreaChart data={series} margin={CHART_MARGIN_LINE_AREA}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis
-                dataKey="date"
-                angle={-45}
-                textAnchor="end"
-                height={60}
-                interval="preserveStartEnd"
-                minTickGap={40}
-                stroke="#888"
-                tickFormatter={formatChartAxisDate}
-                tick={CHART_AXIS_TICK}
-              />
-              <YAxis allowDecimals={false} stroke="#888" tick={CHART_AXIS_TICK} />
-              <Tooltip labelFormatter={chartTooltipLabelFormatter} />
-              <Legend
-                iconType="circle"
-                verticalAlign="bottom"
-                align="center"
-                layout="horizontal"
-                wrapperStyle={CHART_LEGEND_WRAPPER}
-              />
-              {areaSources.map((source) => (
-                <Area
-                  key={source}
-                  type="monotone"
-                  dataKey={source}
-                  stackId="topic-volume"
-                  stroke={OUTLET_COLORS[source] || "#111827"}
-                  fill={OUTLET_COLORS[source] || "#111827"}
-                  fillOpacity={0.55}
-                />
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        coverageEmpty ? (
+          <div className="chart-wrap">
+            <ChartHistoryBuildingEmptyState />
+          </div>
+        ) : (
+          <>
+            <div className="chart-wrap">
+              <ResponsiveContainer width="100%" height="100%" minHeight={CHART_MIN_HEIGHT}>
+                <AreaChart data={series} margin={CHART_MARGIN_LINE_AREA}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                  <XAxis
+                    dataKey="date"
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
+                    interval="preserveStartEnd"
+                    minTickGap={40}
+                    stroke="#888"
+                    tickFormatter={formatChartAxisDate}
+                    tick={CHART_AXIS_TICK}
+                  />
+                  <YAxis allowDecimals={false} stroke="#888" tick={CHART_AXIS_TICK} />
+                  <Tooltip labelFormatter={chartTooltipLabelFormatter} />
+                  <Legend
+                    iconType="circle"
+                    verticalAlign="bottom"
+                    align="center"
+                    layout="horizontal"
+                    wrapperStyle={CHART_LEGEND_WRAPPER}
+                  />
+                  {areaSources.map((source) => (
+                    <Area
+                      key={source}
+                      type="monotone"
+                      dataKey={source}
+                      stackId="topic-volume"
+                      stroke={OUTLET_COLORS[source] || "#111827"}
+                      fill={OUTLET_COLORS[source] || "#111827"}
+                      fillOpacity={0.55}
+                    />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            {partialMeta.show ? <ChartHistoryPartialHint x={partialMeta.x} /> : null}
+          </>
+        )
       ) : null}
     </section>
   );

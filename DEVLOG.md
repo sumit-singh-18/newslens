@@ -520,3 +520,14 @@ Gemini free tier **429** left users stuck: same-day **DB** cache could block a r
 ### Verification
 - **`python3 -m pytest backend/tests/test_analyze_resilience.py -v`**: pass.
 - **`npm run build`** in **`frontend/`**: **`bundle.js`** updated.
+
+## [2026-05-04] - Issue 4: Empty Topic Coverage & Narrative Timeline charts
+
+### What changed
+- **`frontend/app.js`**: Before rendering the stacked **Topic coverage** `AreaChart` and **Narrative Timeline** `LineChart`, the app checks whether the dataset is effectively empty (coverage: all outlet values **0 / null / undefined** across all days; timeline: all bias values **null / undefined**, treating **0** as real bias). When empty, it replaces the chart with a fixed-height centered empty state (clock emoji, **Coverage history is building**, explanatory copy) so the card does not show a blank plot. When there is real data but fewer than seven days of rows or sparse points within a full week, it keeps the chart and adds a subtle note: **Showing [X] days of data — history builds daily as more searches happen**.
+
+### Reason
+New topics had no longitudinal rows yet; Recharts rendered empty axes and confused users.
+
+### Verification
+- **`npm run build`** in **`frontend/`**: success (`bundle.js` updated).
