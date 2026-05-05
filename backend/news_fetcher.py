@@ -1112,6 +1112,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
             source=raw_row["source"],
             url=raw_row["url"],
             title=raw_row["title"],
+            description=(raw_row.get("description") or "").strip(),
             content=raw_row["content"],
             published_at=_parse_newsapi_datetime(raw_row.get("published_at_raw")),
             fetched_at=now_utc,

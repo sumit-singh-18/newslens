@@ -40,6 +40,7 @@ class Article(Base):
     source: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
     title: Mapped[str] = mapped_column(String(1024), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     content: Mapped[str] = mapped_column(Text, nullable=False)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
@@ -112,6 +113,7 @@ class TopicAnalysis(Base):
 def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_article_relevance_column()
+    _ensure_article_description_column()
 
 
 def _ensure_article_relevance_column() -> None:
@@ -123,6 +125,18 @@ def _ensure_article_relevance_column() -> None:
         names = {r[1] for r in rows}
         if "relevance_score" not in names:
             conn.execute(text("ALTER TABLE articles ADD COLUMN relevance_score INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+
+
+def _ensure_article_description_column() -> None:
+    """SQLite: add description if DB predates the column."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        rows = conn.execute(text("PRAGMA table_info(articles)")).fetchall()
+        names = {r[1] for r in rows}
+        if "description" not in names:
+            conn.execute(text("ALTER TABLE articles ADD COLUMN description TEXT NOT NULL DEFAULT ''"))
             conn.commit()
 
 

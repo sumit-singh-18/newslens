@@ -631,3 +631,8 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 - **`backend/framing_extract.py`**: Drop sentences matching boilerplate substrings (copyright, subscribe, **©**, read more, etc.); still require **≥6** words; require **≥2** usable sentences or return **`""`** (no title/body fallback). **`main.py`** sanitization maps empty **`framing_summary`** to **`null`**.
 - **`frontend/app.js`**: **`OutletCard`** renders the framing **`<p className="body">`** only when **`framing_summary`** is set.
 - Cleared **`topic_analysis`** cache; **`npm run build`**: success.
+
+## [2026-05-04] - Framing: description-first + lighter spam filter
+
+### What changed
+- **`backend/framing_extract.py`**: Prefer **`Article.description`** for summaries (clean NewsAPI blurb); fallback = first **two** **`content`** sentences after a **triple** spam check (reject only when **&lt;8** words **and** spam markers **and** no proper-noun-like tokens). **`backend/database.py`** + **`news_fetcher.py`**: persist **`articles.description`**. Cleared **`topic_analysis`**; **`npm run build`**: success; pytest **22** pass.
