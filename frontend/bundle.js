@@ -52483,7 +52483,12 @@ var API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
 var HISTORY_KEY = "newslens-search-history";
 var READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 var DEFAULT_SERIES_LABEL = "14d";
-var SUGGESTED_TOPICS = ["15-Minute Cities", "Digital Pound", "Right to Repair"];
+var FALLBACK_TRENDING_CHIPS = [
+  { topic: "trade war", count: 0 },
+  { topic: "climate change", count: 0 },
+  { topic: "artificial intelligence", count: 0 },
+  { topic: "us-iran conflict", count: 0 }
+];
 function validateSearchTopicInput(raw) {
   const t = String(raw ?? "").trim();
   if (!t || t.length < 3) {
@@ -52995,18 +53000,17 @@ function updateHistory(term) {
   ].slice(0, 5);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
-function spectrumSegmentWidths(biasDistribution, outlets) {
-  const fromApi = normalizeBiasDistribution(biasDistribution);
-  if (fromApi) {
-    const sum = fromApi.left_pct + fromApi.center_pct + fromApi.right_pct;
-    if (sum > 0) {
-      return {
-        left: fromApi.left_pct / sum,
-        center: fromApi.center_pct / sum,
-        right: fromApi.right_pct / sum
-      };
-    }
+function roundThreeTo100(floats) {
+  const f = floats.map((x2) => Math.floor(x2));
+  let rem = 100 - f[0] - f[1] - f[2];
+  const order = [0, 1, 2].sort((i, j) => floats[j] - f[j] - (floats[i] - f[i]));
+  for (let k2 = 0; k2 < rem; k2 += 1) {
+    f[order[k2]] += 1;
   }
+  return f;
+}
+var SPECTRUM_MIN_SEG_PCT = 5;
+function outletBiasSpectrumPercentages(outlets) {
   const list = Array.isArray(outlets) ? outlets : [];
   let nl = 0;
   let nc = 0;
@@ -53018,9 +53022,32 @@ function spectrumSegmentWidths(biasDistribution, outlets) {
     else if (b === "right") nr += 1;
     else nc += 1;
   }
-  const t = nl + nc + nr;
-  if (t === 0) return { left: 1 / 3, center: 1 / 3, right: 1 / 3 };
-  return { left: nl / t, center: nc / t, right: nr / t };
+  const T = nl + nc + nr;
+  if (T === 0) {
+    const third = 100 / 3;
+    const [left_pct2, center_pct2, right_pct2] = roundThreeTo100([third, third, third]);
+    return {
+      left_pct: left_pct2,
+      center_pct: center_pct2,
+      right_pct: right_pct2,
+      text: `${left_pct2}% left, ${center_pct2}% center, ${right_pct2}% right`
+    };
+  }
+  const remainder = 100 - 3 * SPECTRUM_MIN_SEG_PCT;
+  const rawL = SPECTRUM_MIN_SEG_PCT + nl / T * remainder;
+  const rawC = SPECTRUM_MIN_SEG_PCT + nc / T * remainder;
+  const rawR = SPECTRUM_MIN_SEG_PCT + nr / T * remainder;
+  const [left_pct, center_pct, right_pct] = roundThreeTo100([rawL, rawC, rawR]);
+  return {
+    left_pct,
+    center_pct,
+    right_pct,
+    text: `${left_pct}% left, ${center_pct}% center, ${right_pct}% right`
+  };
+}
+function spectrumSegmentWidths(outlets) {
+  const p = outletBiasSpectrumPercentages(outlets);
+  return { left: p.left_pct, center: p.center_pct, right: p.right_pct };
 }
 var SPECTRUM_PROXIMITY_SCORE = 0.05;
 var SPECTRUM_PROXIMITY_LIFTS = [-20, 0, -40];
@@ -53114,25 +53141,21 @@ async function fetchTopicTrend(topic, days = 7) {
   }
   return payload.data;
 }
-function computeBiasDistribution(apiDist) {
-  const fromApi = normalizeBiasDistribution(apiDist);
-  if (fromApi) {
-    const lp = fromApi.left_pct;
-    const cp = fromApi.center_pct;
-    const rp = fromApi.right_pct;
-    return {
-      left: lp,
-      center: cp,
-      right: rp,
-      text: `${lp}% left, ${cp}% center, ${rp}% right`
-    };
+async function fetchTrendingTopics() {
+  const response = await fetch(`${API_BASE_URL}/trending-topics`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Failed to load trending topics.");
   }
-  return {
-    left: 0,
-    center: 0,
-    right: 0,
-    text: "Bias mix unavailable."
-  };
+  const payload = await response.json();
+  if (!payload.success) {
+    throw new Error(payload.error || "Trending topics request failed.");
+  }
+  const topics = payload.data && Array.isArray(payload.data.topics) ? payload.data.topics : [];
+  return topics.map((row) => ({
+    topic: typeof row.topic === "string" ? row.topic : String(row.topic ?? ""),
+    count: typeof row.count === "number" ? row.count : Number(row.count) || 0
+  }));
 }
 function extremOutlets(outlets) {
   const list = Array.isArray(outlets) ? outlets : [];
@@ -53144,12 +53167,9 @@ function extremOutlets(outlets) {
 function LoadingSkeleton() {
   return /* @__PURE__ */ import_react36.default.createElement("section", { className: "skeleton-grid" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card tall" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card wide" }));
 }
-function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExtremes, isFetching }) {
+function BiasSpectrum({ outlets, articlesAnalyzed, spectrumExtremes, isFetching }) {
   const list = Array.isArray(outlets) ? outlets : [];
-  const widths = (0, import_react36.useMemo)(
-    () => spectrumSegmentWidths(biasDistribution, list),
-    [biasDistribution, list]
-  );
+  const widths = (0, import_react36.useMemo)(() => spectrumSegmentWidths(list), [list]);
   const extremes = (0, import_react36.useMemo)(() => {
     const fb = extremOutlets(list);
     const ml = spectrumExtremes?.most_left_outlet;
@@ -53190,19 +53210,25 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
       className: `spectrum-gradient-bar${isFetching ? " spectrum-bar-shimmer" : ""}`,
       "aria-hidden": "true"
     },
-    /* @__PURE__ */ import_react36.default.createElement("div", { className: "spectrum-segment spectrum-segment-left", style: { flex: widths.left } }),
+    /* @__PURE__ */ import_react36.default.createElement(
+      "div",
+      {
+        className: "spectrum-segment spectrum-segment-left",
+        style: { width: `${widths.left}%`, flex: "0 0 auto" }
+      }
+    ),
     /* @__PURE__ */ import_react36.default.createElement(
       "div",
       {
         className: "spectrum-segment spectrum-segment-center",
-        style: { flex: widths.center }
+        style: { width: `${widths.center}%`, flex: "0 0 auto" }
       }
     ),
     /* @__PURE__ */ import_react36.default.createElement(
       "div",
       {
         className: "spectrum-segment spectrum-segment-right",
-        style: { flex: widths.right }
+        style: { width: `${widths.right}%`, flex: "0 0 auto" }
       }
     )
   ), /* @__PURE__ */ import_react36.default.createElement(
@@ -53731,8 +53757,8 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
 function Header({ onStartAnalysis }) {
   return /* @__PURE__ */ import_react36.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand-lockup" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand" }, "NewsLens"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "brand-tag" }, "Truth in headlines. Bias in framing.")), /* @__PURE__ */ import_react36.default.createElement("nav", null, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "active" }, "Dashboard"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#topics" }, "Topics"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#outlets" }, "Outlets"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#methodology" }, "Methodology")), /* @__PURE__ */ import_react36.default.createElement("button", { className: "cta", onClick: onStartAnalysis }, "Start Analysis"));
 }
-function ResultsHeader({ topic, outlets, biasDistribution, spectrumExtremes, onOpenReadAcross }) {
-  const dist = (0, import_react36.useMemo)(() => computeBiasDistribution(biasDistribution), [biasDistribution]);
+function ResultsHeader({ topic, outlets, spectrumExtremes, onOpenReadAcross }) {
+  const dist = (0, import_react36.useMemo)(() => outletBiasSpectrumPercentages(outlets), [outlets]);
   const ex = (0, import_react36.useMemo)(() => {
     const fb = extremOutlets(outlets);
     const ml = spectrumExtremes?.most_left_outlet;
@@ -53775,7 +53801,6 @@ function AnalysisResults({
     {
       topic: data.topic || "",
       outlets,
-      biasDistribution: data.bias_distribution,
       spectrumExtremes: {
         most_left_outlet: data.most_left_outlet,
         most_right_outlet: data.most_right_outlet
@@ -53786,7 +53811,6 @@ function AnalysisResults({
     BiasSpectrum,
     {
       outlets,
-      biasDistribution: data.bias_distribution,
       articlesAnalyzed: data.scoring && typeof data.scoring.article_count === "number" ? data.scoring.article_count : null,
       spectrumExtremes: {
         most_left_outlet: data.most_left_outlet,
@@ -53807,7 +53831,9 @@ function Hero({
   onRetryFetch,
   onTryAgainValidation,
   history,
-  runSearch
+  runSearch,
+  trendingTopics,
+  trendingLoading
 }) {
   return /* @__PURE__ */ import_react36.default.createElement("section", { className: "hero", id: "search-anchor" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "NewsLens editorial intelligence"), /* @__PURE__ */ import_react36.default.createElement("h1", null, "Read the same story through every bias line."), /* @__PURE__ */ import_react36.default.createElement("p", { className: "lede" }, "NewsLens maps truth signals, bias direction, and narrative framing so you can compare how outlets shape the same topic."), /* @__PURE__ */ import_react36.default.createElement("form", { className: "search-form", onSubmit }, /* @__PURE__ */ import_react36.default.createElement(
     "input",
@@ -53819,15 +53845,15 @@ function Hero({
       value: searchInput,
       onChange: onSearchInputChange
     }
-  ), /* @__PURE__ */ import_react36.default.createElement("button", { className: "search-btn", type: "submit" }, "Analyze")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label" }, "Suggested topics"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row" }, SUGGESTED_TOPICS.map((label) => /* @__PURE__ */ import_react36.default.createElement(
+  ), /* @__PURE__ */ import_react36.default.createElement("button", { className: "search-btn", type: "submit" }, "Analyze")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label" }, "Trending topics"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row" }, trendingLoading ? Array.from({ length: 7 }).map((_, i) => /* @__PURE__ */ import_react36.default.createElement("span", { key: `trend-skel-${i}`, className: "suggestion-tag suggestion-tag-skeleton", "aria-hidden": true })) : (trendingTopics.length ? trendingTopics : FALLBACK_TRENDING_CHIPS).map((row) => /* @__PURE__ */ import_react36.default.createElement(
     "button",
     {
-      key: label,
+      key: row.topic,
       type: "button",
       className: "suggestion-tag",
-      onClick: () => runSearch(label)
+      onClick: () => runSearch(row.topic)
     },
-    label
+    row.topic
   )))), searchValidationError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { style: { color: "#b91c1c", fontSize: "0.88rem", margin: "0 0 8px" } }, searchValidationError), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onTryAgainValidation }, "Try again")) : null, isError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error", style: { margin: "0 0 8px" } }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onRetryFetch }, "Try again")) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row" }, history.map((item) => /* @__PURE__ */ import_react36.default.createElement("button", { key: item, className: "history-chip", onClick: () => runSearch(item) }, item))));
 }
 function App() {
@@ -53844,6 +53870,12 @@ function App() {
     queryFn: () => fetchAnalysis(topic),
     enabled: Boolean(topic),
     placeholderData: keepPreviousData,
+    retry: 1
+  });
+  const trendingQuery = useQuery({
+    queryKey: ["trending-topics"],
+    queryFn: fetchTrendingTopics,
+    staleTime: 6e4,
     retry: 1
   });
   (0, import_react36.useEffect)(() => {
@@ -53944,7 +53976,9 @@ function App() {
       onRetryFetch: () => query.refetch(),
       onTryAgainValidation: handleTryAgainAfterValidation,
       history,
-      runSearch
+      runSearch,
+      trendingTopics: trendingQuery.data || [],
+      trendingLoading: trendingQuery.isLoading
     }
   ), !topic ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "empty-note" }, "Start with a topic to generate a full outlet comparison dashboard.") : null, query.isFetching ? /* @__PURE__ */ import_react36.default.createElement(LoadingSkeleton, null) : null, data ? /* @__PURE__ */ import_react36.default.createElement(ErrorBoundary, { key: topic }, /* @__PURE__ */ import_react36.default.createElement(
     AnalysisResults,
