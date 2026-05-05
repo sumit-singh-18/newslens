@@ -636,3 +636,8 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 
 ### What changed
 - **`backend/framing_extract.py`**: Prefer **`Article.description`** for summaries (clean NewsAPI blurb); fallback = first **two** **`content`** sentences after a **triple** spam check (reject only when **&lt;8** words **and** spam markers **and** no proper-noun-like tokens). **`backend/database.py`** + **`news_fetcher.py`**: persist **`articles.description`**. Cleared **`topic_analysis`**; **`npm run build`**: success; pytest **22** pass.
+
+## [2026-05-04] - NewsAPI query: hyphens + US election OR expansion
+
+### What changed
+- **`backend/news_fetcher.py`**: At the start of **`fetch_and_store_articles`**, **`_normalize_fetch_topic_input`** turns **`-` / `_` → spaces**, collapses whitespace, lowercases. **`_newsapi_q_with_expansions`** maps **`us election` / `us elections`** to **`us election OR american election OR presidential race`** for the **`q`** sent to NewsAPI. **`npm run build`**: success; pytest **22** pass.

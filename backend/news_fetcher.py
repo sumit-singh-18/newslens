@@ -26,6 +26,26 @@ NEWSAPI_EVERYTHING = "https://newsapi.org/v2/everything"
 NEWSAPI_MAX_SOURCES_PER_REQUEST = 20
 RELAX_ARTICLE_TARGET = 10
 
+
+def _normalize_fetch_topic_input(raw: str) -> str:
+    """
+    Normalize user topic before fetch: hyphens/underscores → spaces (NewsAPI treats hyphen as word-boundary),
+    collapse whitespace, lowercase via normalize_topic.
+    """
+    s = (raw or "").replace("-", " ").replace("_", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return normalize_topic(s)
+
+
+def _newsapi_q_with_expansions(canonical_topic: str) -> str:
+    """Map canonical topic to NewsAPI `q` (boolean OR where helpful)."""
+    t = re.sub(r"\s+", " ", (canonical_topic or "").strip())
+    tl = t.lower()
+    if tl in ("us elections", "us election"):
+        return "us election OR american election OR presidential race"
+    return canonical_topic
+
+
 # Credibility-ranked vetted pools — NewsAPI publisher IDs only (see https://newsapi.org/sources).
 # Note: the everything endpoint accepts at most 20 `sources` per request; multi-chunk fetching is used.
 VETTED_SOURCES_BY_CATEGORY: dict[str, tuple[str, ...]] = {
@@ -961,7 +981,7 @@ def _invalidate_topic_articles(topic: str, db: Session) -> None:
 
 
 async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
-    topic = normalize_topic(topic)
+    topic = _normalize_fetch_topic_input(topic)
     if not topic:
         raise NewsFetcherError("Topic must not be empty.")
 
@@ -971,12 +991,16 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
     relaxed_q = relax_search_query(topic)
     q_for_full = relaxed_q if relaxed_q else topic
 
+    q_primary = _newsapi_q_with_expansions(topic)
+    q_relaxed = _newsapi_q_with_expansions(relaxed_q) if relaxed_q else q_primary
+    q_full = _newsapi_q_with_expansions(q_for_full)
+
     attempt_specs: list[tuple[list[str], str, list[str]]] = [
-        (narrow_pool_ids, topic, source_categories),
+        (narrow_pool_ids, q_primary, source_categories),
     ]
     if relaxed_q != topic:
-        attempt_specs.append((narrow_pool_ids, relaxed_q, source_categories))
-    attempt_specs.append((full_pool_ids, q_for_full, list(CATEGORY_ORDER)))
+        attempt_specs.append((narrow_pool_ids, q_relaxed, source_categories))
+    attempt_specs.append((full_pool_ids, q_full, list(CATEGORY_ORDER)))
     fetch_attempts = _unique_fetch_attempts(attempt_specs)
 
     cached_articles = _get_recent_cached_articles(topic, db)
