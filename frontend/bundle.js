@@ -52484,6 +52484,16 @@ var HISTORY_KEY = "newslens-search-history";
 var READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 var DEFAULT_SERIES_LABEL = "14d";
 var SUGGESTED_TOPICS = ["15-Minute Cities", "Digital Pound", "Right to Repair"];
+function validateSearchTopicInput(raw) {
+  const t = String(raw ?? "").trim();
+  if (!t || t.length < 3) {
+    return { ok: false, message: "Please enter at least 3 characters" };
+  }
+  if (!/\p{L}/u.test(t)) {
+    return { ok: false, message: "Please enter a news topic" };
+  }
+  return { ok: true };
+}
 var COVERAGE_STATUS = {
   HIGH: "high",
   DEVELOPING: "developing",
@@ -53012,12 +53022,28 @@ function spectrumSegmentWidths(biasDistribution, outlets) {
   if (t === 0) return { left: 1 / 3, center: 1 / 3, right: 1 / 3 };
   return { left: nl / t, center: nc / t, right: nr / t };
 }
+var SPECTRUM_PROXIMITY_SCORE = 0.05;
+var SPECTRUM_PROXIMITY_LIFTS = [-20, 0, -40];
 function assignSpectrumLanes(markers, minGapPct) {
   const clamp = (n, a2, b) => Math.min(b, Math.max(a2, n));
   const sorted = [...markers].sort((a2, b) => a2.score - b.score);
   const laneLastX = [];
   const maxLane = 12;
-  return sorted.map((m) => {
+  const proximityLiftPx = new Array(sorted.length).fill(0);
+  let runStart = 0;
+  for (let i = 1; i <= sorted.length; i += 1) {
+    const breakRun = i === sorted.length || Math.abs(sorted[i].score - sorted[i - 1].score) > SPECTRUM_PROXIMITY_SCORE;
+    if (breakRun) {
+      const runLen = i - runStart;
+      if (runLen >= 2) {
+        for (let j = runStart; j < i; j += 1) {
+          proximityLiftPx[j] = SPECTRUM_PROXIMITY_LIFTS[(j - runStart) % SPECTRUM_PROXIMITY_LIFTS.length];
+        }
+      }
+      runStart = i;
+    }
+  }
+  return sorted.map((m, idx) => {
     const s2 = clamp(m.score, -1, 1);
     const visualPosition = s2 * 1.5 * 50 + 50;
     const x2 = clamp(visualPosition, 5, 95);
@@ -53026,8 +53052,12 @@ function assignSpectrumLanes(markers, minGapPct) {
       L += 1;
     }
     laneLastX[L] = x2;
-    return { ...m, lane: L, xPct: x2 };
+    return { ...m, lane: L, xPct: x2, proximityLiftPx: proximityLiftPx[idx] };
   });
+}
+function spectrumMarkerLabel(name) {
+  const s2 = String(name || "");
+  return s2.length > 10 ? s2.slice(0, 10) : s2;
 }
 function outletMarkerColor(outlet) {
   const bucket = biasSpectrumBucket(outlet.dominant_bias_label);
@@ -53145,11 +53175,15 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
     }));
     return assignSpectrumLanes(scored, 4);
   }, [list]);
+  const spectrumStripPadTop = (0, import_react36.useMemo)(
+    () => placedMarkers.reduce((acc, x2) => Math.max(acc, -(x2.proximityLiftPx ?? 0)), 0),
+    [placedMarkers]
+  );
   const stripHeight = (0, import_react36.useMemo)(() => {
     const maxLane = placedMarkers.reduce((m, x2) => Math.max(m, x2.lane), -1);
     const lanes = maxLane < 0 ? 0 : maxLane + 1;
-    return 36 + lanes * 15;
-  }, [placedMarkers]);
+    return 36 + lanes * 15 + spectrumStripPadTop + 8;
+  }, [placedMarkers, spectrumStripPadTop]);
   return /* @__PURE__ */ import_react36.default.createElement("section", { id: "dashboard", className: "bias-hero card" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "section-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Outlet marker spectrum"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Each outlet positioned by average bias score for this topic")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-spectrum-visual" }, /* @__PURE__ */ import_react36.default.createElement(
     "div",
     {
@@ -53175,26 +53209,36 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
     "div",
     {
       className: "spectrum-marker-strip",
-      style: { minHeight: `${stripHeight}px` },
+      style: {
+        minHeight: `${stripHeight}px`,
+        paddingTop: spectrumStripPadTop > 0 ? `${spectrumStripPadTop}px` : void 0
+      },
       role: "presentation"
     },
-    placedMarkers.map(({ outlet, score, lane, xPct }) => /* @__PURE__ */ import_react36.default.createElement(
-      "div",
-      {
-        key: outlet.source,
-        className: "spectrum-marker",
-        style: { left: `${xPct}%`, top: 4 + lane * 15 },
-        title: `${outlet.source} \u2014 bias score ${score.toFixed(3)}`
-      },
-      /* @__PURE__ */ import_react36.default.createElement(
-        "span",
+    placedMarkers.map(({ outlet, score, lane, xPct, proximityLiftPx }) => {
+      const lift = proximityLiftPx ?? 0;
+      return /* @__PURE__ */ import_react36.default.createElement(
+        "div",
         {
-          className: "spectrum-marker-dot",
-          style: { background: outletMarkerColor(outlet) }
-        }
-      ),
-      /* @__PURE__ */ import_react36.default.createElement("span", { className: "spectrum-marker-name" }, outlet.source)
-    ))
+          key: outlet.source,
+          className: "spectrum-marker",
+          style: {
+            left: `${xPct}%`,
+            top: 4 + lane * 15,
+            transform: `translateX(-50%) translateY(${lift}px)`
+          },
+          title: `${outlet.source} \u2014 bias score ${score.toFixed(3)}`
+        },
+        /* @__PURE__ */ import_react36.default.createElement(
+          "span",
+          {
+            className: "spectrum-marker-dot",
+            style: { background: outletMarkerColor(outlet) }
+          }
+        ),
+        /* @__PURE__ */ import_react36.default.createElement("span", { className: "spectrum-marker-name" }, spectrumMarkerLabel(outlet.source))
+      );
+    })
   ), /* @__PURE__ */ import_react36.default.createElement("div", { className: "spectrum-axis-labels" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "spectrum-axis-extreme spectrum-axis-left" }, extremes.left), /* @__PURE__ */ import_react36.default.createElement("span", { className: "spectrum-axis-mid" }, "center"), /* @__PURE__ */ import_react36.default.createElement("span", { className: "spectrum-axis-extreme spectrum-axis-right" }, extremes.right)), /* @__PURE__ */ import_react36.default.createElement("p", { className: "spectrum-articles-footnote" }, "Positions based on ", articleTotal, " article", articleTotal === 1 ? "" : "s", " analyzed")));
 }
 function SparklineSeries({ series, color: color2 }) {
@@ -53754,11 +53798,14 @@ function AnalysisResults({
 }
 function Hero({
   searchInput,
-  setSearchInput,
+  onSearchInputChange,
   onSubmit,
   searchRef,
+  searchValidationError,
   isError,
   error,
+  onRetryFetch,
+  onTryAgainValidation,
   history,
   runSearch
 }) {
@@ -53770,7 +53817,7 @@ function Hero({
       type: "text",
       placeholder: "Search a topic (e.g. trade war, AI regulation, climate policy)",
       value: searchInput,
-      onChange: (event) => setSearchInput(event.target.value)
+      onChange: onSearchInputChange
     }
   ), /* @__PURE__ */ import_react36.default.createElement("button", { className: "search-btn", type: "submit" }, "Analyze")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label" }, "Suggested topics"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row" }, SUGGESTED_TOPICS.map((label) => /* @__PURE__ */ import_react36.default.createElement(
     "button",
@@ -53781,13 +53828,15 @@ function Hero({
       onClick: () => runSearch(label)
     },
     label
-  )))), isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error" }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row" }, history.map((item) => /* @__PURE__ */ import_react36.default.createElement("button", { key: item, className: "history-chip", onClick: () => runSearch(item) }, item))));
+  )))), searchValidationError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { style: { color: "#b91c1c", fontSize: "0.88rem", margin: "0 0 8px" } }, searchValidationError), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onTryAgainValidation }, "Try again")) : null, isError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error", style: { margin: "0 0 8px" } }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onRetryFetch }, "Try again")) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row" }, history.map((item) => /* @__PURE__ */ import_react36.default.createElement("button", { key: item, className: "history-chip", onClick: () => runSearch(item) }, item))));
 }
 function App() {
   const [searchInput, setSearchInput] = (0, import_react36.useState)("");
   const [topic, setTopic] = (0, import_react36.useState)("");
   const [history, setHistory] = (0, import_react36.useState)(readHistory);
   const searchRef = (0, import_react36.useRef)(null);
+  const lastSuccessfulTopicRef = (0, import_react36.useRef)("");
+  const [searchValidationError, setSearchValidationError] = (0, import_react36.useState)(null);
   const [compareSelection, setCompareSelection] = (0, import_react36.useState)([]);
   const [readAcrossOpen, setReadAcrossOpen] = (0, import_react36.useState)(false);
   const query = useQuery({
@@ -53800,6 +53849,11 @@ function App() {
   (0, import_react36.useEffect)(() => {
     setHistory(readHistory());
   }, []);
+  (0, import_react36.useEffect)(() => {
+    if (query.isSuccess && topic) {
+      lastSuccessfulTopicRef.current = topic;
+    }
+  }, [query.isSuccess, topic]);
   (0, import_react36.useEffect)(() => {
     fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
       method: "POST",
@@ -53818,6 +53872,7 @@ function App() {
   const runSearch = (nextTopic) => {
     const normalized = nextTopic.trim();
     if (!normalized) return;
+    setSearchValidationError(null);
     setTopic(normalized);
     setSearchInput(normalized);
     updateHistory(normalized);
@@ -53826,7 +53881,17 @@ function App() {
   };
   const onSubmit = (event) => {
     event.preventDefault();
+    const v = validateSearchTopicInput(searchInput);
+    if (!v.ok) {
+      setSearchValidationError(v.message);
+      return;
+    }
+    setSearchValidationError(null);
     runSearch(searchInput);
+  };
+  const onSearchInputChange = (event) => {
+    setSearchValidationError(null);
+    setSearchInput(event.target.value);
   };
   const focusSearchArea = () => {
     document.getElementById("search-anchor")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -53838,8 +53903,14 @@ function App() {
       }, 320);
     });
   };
-  const handleStartAnalysis = () => {
-    focusSearchArea();
+  const handleTryAgainAfterValidation = () => {
+    const prev = lastSuccessfulTopicRef.current;
+    if (prev) {
+      setSearchValidationError(null);
+      runSearch(prev);
+    } else {
+      focusSearchArea();
+    }
   };
   const handleTryBroaderSearch = () => {
     focusSearchArea();
@@ -53861,11 +53932,14 @@ function App() {
     Hero,
     {
       searchInput,
-      setSearchInput,
+      onSearchInputChange,
       onSubmit,
       searchRef,
+      searchValidationError,
       isError: query.isError,
       error: query.error,
+      onRetryFetch: () => query.refetch(),
+      onTryAgainValidation: handleTryAgainAfterValidation,
       history,
       runSearch
     }
