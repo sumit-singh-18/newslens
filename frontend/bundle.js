@@ -52816,14 +52816,6 @@ var ErrorBoundary = class extends import_react36.default.Component {
     return this.props.children;
   }
 };
-function outletFramingBody(outlet) {
-  const hasArticles = (outlet.article_count || 0) > 0;
-  if (outlet.framing_summary) return outlet.framing_summary;
-  if (outlet.missing_angle) return outlet.missing_angle;
-  if (hasArticles && outlet.headline) return `Lead: ${outlet.headline}`;
-  if (hasArticles) return "Topic coverage is available; framing snippet missing for this snapshot.";
-  return "No framing summary available yet for this outlet.";
-}
 function normalizeOutlet(o) {
   if (!o || typeof o !== "object") {
     return {
@@ -53341,7 +53333,7 @@ function SourceProfileSection({ outletName }) {
 }
 function OutletCard({ outlet, compareSelected, onCompareClick }) {
   const selectedClass = compareSelected ? "outlet-card-selected" : "";
-  return /* @__PURE__ */ import_react36.default.createElement("article", { className: `card outlet-card ${selectedClass}` }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-badges" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: biasBadgeClass(outlet.dominant_bias_label) }, outlet.dominant_bias_label || "No bias label"), /* @__PURE__ */ import_react36.default.createElement("p", { className: sentimentBadgeClass(outlet.dominant_sentiment_label) }, outlet.dominant_sentiment_label || "Neutral")), /* @__PURE__ */ import_react36.default.createElement("p", { className: "body" }, outletFramingBody(outlet)), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof outlet.avg_sentiment_score === "number" ? outlet.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity (0-10)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(outlet.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement(SourceProfileSection, { outletName: outlet.source }));
+  return /* @__PURE__ */ import_react36.default.createElement("article", { className: `card outlet-card ${selectedClass}` }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-badges" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: biasBadgeClass(outlet.dominant_bias_label) }, outlet.dominant_bias_label || "No bias label"), /* @__PURE__ */ import_react36.default.createElement("p", { className: sentimentBadgeClass(outlet.dominant_sentiment_label) }, outlet.dominant_sentiment_label || "Neutral")), outlet.framing_summary ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "body" }, outlet.framing_summary) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof outlet.avg_sentiment_score === "number" ? outlet.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity (0-10)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(outlet.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement(SourceProfileSection, { outletName: outlet.source }));
 }
 function OutletGrid({ outlets, compareSelection, onCompareClick }) {
   const selectedSet = new Set(compareSelection);
