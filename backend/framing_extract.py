@@ -1,165 +1,58 @@
 from __future__ import annotations
 
-import logging
 import re
 from typing import Any
 
-logger = logging.getLogger(__name__)
 
-# Lower than previous 25 so short leads become eligible for scoring.
-SENTENCE_MIN_LEN = 10
-
-_CHARS_BRACKET_MARKER_RE = re.compile(r"\[\s*\+?\d+\s*chars?\s*\]", re.IGNORECASE)
-_CHARS_PAREN_MARKER_RE = re.compile(r"\(\s*\+?\d+\s*chars?\s*\)", re.IGNORECASE)
+def clean_text(text: str | None) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"\[\+?\d+\s*chars?\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\(\+?\d+\s*chars?\)", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"http\S+", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def strip_chars_length_markers(text: str | None) -> str:
-    """Remove embedded NewsAPI length markers (e.g. [+5162 chars]) from extracted framing copy."""
-    if text is None:
-        return ""
-    t = str(text)
-    t = _CHARS_BRACKET_MARKER_RE.sub("", t)
-    t = _CHARS_PAREN_MARKER_RE.sub("", t)
-    return t.strip()
+    """Backward-compatible alias: full API-safe cleanup including markers, HTML, and URLs."""
+    return clean_text(text)
 
 
-def first_n_words(text: str, n: int = 100) -> str:
-    words = (text or "").split()
-    if len(words) <= n:
-        return " ".join(words).strip()
-    return " ".join(words[:n]).strip()
-
-
-def split_sentences(text: str, min_len: int | None = None) -> list[str]:
-    ml = SENTENCE_MIN_LEN if min_len is None else min_len
-    raw = re.split(r"(?<=[.!?])\s+", (text or "").strip())
-    out = [s.strip() for s in raw if len(s.strip()) >= ml]
-    return out
-
-
-def _sentiment_charge(raw_sentiment: dict[str, float]) -> float:
-    """Higher = stronger positive/negative vs neutral (\"sentiment-charged\")."""
-    lower = {str(k).lower(): float(v) for k, v in raw_sentiment.items()}
-    neu = lower.get("neutral", 0.0)
-    return 1.0 - neu
-
-
-def extractive_framing_summary(nlp: Any, corpus: str, k: int = 2) -> str:
+def get_framing_summary(articles: list[Any], topic: str, source: str) -> str:
     """
-    Pick the k sentences with the highest sentiment charge (1 - P(neutral))
-    from the corpus using the same sentiment model as the rest of the pipeline.
+    First up to three sentences (6+ words each) from the highest–relevance_score article body.
+    topic and source are accepted for API stability; filtering is the caller's responsibility.
     """
-    corpus = (corpus or "").strip()
-    if not corpus:
-        logger.info("[NewsLens] framing extractive: empty corpus")
-        return ""
-    sents = split_sentences(corpus)
-    logger.info(
-        "[NewsLens] framing extractive: extracted %d sentences (min_len=%d), corpus_chars=%d",
-        len(sents),
-        SENTENCE_MIN_LEN,
-        len(corpus),
-    )
-    if not sents:
-        logger.info("[NewsLens] framing extractive: no sentences met min_len; using corpus head")
-        return strip_chars_length_markers(corpus[:800])
-    if len(sents) <= k:
-        return strip_chars_length_markers(" ".join(sents))
+    _ = topic  # reserved for logging / future use
+    _ = source
 
-    analyses = nlp.analyze_batch(sents)
-    scored: list[tuple[float, str]] = []
-    for sent, an in zip(sents, analyses):
-        rs = an.get("raw_scores") or {}
-        sent_raw = rs.get("sentiment") if isinstance(rs, dict) else {}
-        if not isinstance(sent_raw, dict):
-            sent_raw = {}
-        ch = _sentiment_charge(sent_raw)
-        scored.append((ch, sent))
+    fallback = "Coverage snapshot unavailable."
 
-    scored.sort(key=lambda item: -item[0])
-    for rank, (ch, sent) in enumerate(scored[: min(8, len(scored))], start=1):
-        logger.info(
-            "[NewsLens] framing sentence rank %d: charge=%.5f chars=%d preview=%s",
-            rank,
-            ch,
-            len(sent),
-            (sent[:120] + "…") if len(sent) > 120 else sent,
-        )
+    if not articles:
+        return fallback
 
-    if all(t[0] < 1e-5 for t in scored):
-        logger.info(
-            "[NewsLens] framing extractive: all sentence charges ~0 (neutral); using first %d sentences fallback",
-            k,
-        )
-        return strip_chars_length_markers(" ".join(sents[:k]))
+    sorted_articles = sorted(articles, key=lambda a: -int(getattr(a, "relevance_score", None) or 0))
+    top = sorted_articles[0]
+    raw_content = getattr(top, "content", None) or ""
+    raw_title = getattr(top, "title", None) or ""
 
-    top_k = [s for _, s in scored[:k]]
-    joined = " ".join(top_k).strip()
-    if not joined:
-        logger.info("[NewsLens] framing extractive: top-k join empty after scoring; using first %d sentences", k)
-        return strip_chars_length_markers(" ".join(sents[:k]))
-    return strip_chars_length_markers(joined)
+    body = clean_text(raw_content)
+    body = re.sub(r"^\s*Lead:\s*", "", body, flags=re.IGNORECASE).strip()
+    if not body:
+        body = clean_text(raw_title)
+        body = re.sub(r"^\s*Lead:\s*", "", body, flags=re.IGNORECASE).strip()
 
+    if not body:
+        return fallback
 
-def build_outlet_corpus_snippets(article_rows: list[dict[str, Any]]) -> str:
-    """title + first 100 words per article, concatenated (highest relevance first)."""
-    rows = sorted(article_rows, key=lambda r: -int(r.get("relevance_score") or 0))
-    parts: list[str] = []
-    for row in rows:
-        title = (row.get("title") or "").strip()
-        body = (row.get("content") or "").strip()
-        snippet = first_n_words(body, 100)
-        if title and snippet:
-            parts.append(f"{title}. {snippet}")
-        elif title:
-            parts.append(title)
-        elif snippet:
-            parts.append(snippet)
-    return " ".join(parts).strip()
+    sentences = re.split(r"(?<=[.!?])\s+", body)
+    good = [s.strip() for s in sentences if len(s.split()) >= 6]
+    picked = good[:3]
+    if picked:
+        out = " ".join(picked).strip()
+        return out if out else fallback
 
-
-def fallback_framing_best_article(
-    rows: list[dict[str, Any]],
-    nlp: Any,
-    n_sentences: int = 2,
-) -> str:
-    """First n sentences from the best sentiment-charged piece; rows ordered by relevance_score first."""
-    if not rows:
-        return ""
-    rows_sorted = sorted(rows, key=lambda r: -int(r.get("relevance_score") or 0))
-    top_title = (rows_sorted[0].get("title") or "").strip()
-    stitched: list[str] = []
-    for r in rows_sorted:
-        title = (r.get("title") or "").strip()
-        body = (r.get("content") or "").strip()
-        if title and body:
-            stitched.append(f"{title}. {body}")
-        elif body:
-            stitched.append(body)
-        elif title:
-            stitched.append(title)
-    if not stitched:
-        return strip_chars_length_markers(top_title)
-    analyses = nlp.analyze_batch(stitched)
-    best_i = 0
-    best_charge = -1.0
-    for i, an in enumerate(analyses):
-        rs = (an.get("raw_scores") or {}).get("sentiment") if isinstance(an.get("raw_scores"), dict) else {}
-        if not isinstance(rs, dict):
-            rs = {}
-        ch = _sentiment_charge(rs)
-        if ch > best_charge:
-            best_charge = ch
-            best_i = i
-    best_row = rows_sorted[best_i]
-    title = (best_row.get("title") or "").strip()
-    body = (best_row.get("content") or "").strip()
-    blob = f"{title}. {body}" if title and body else (body or title)
-    sents = split_sentences(blob)
-    if len(sents) >= n_sentences:
-        return strip_chars_length_markers(" ".join(sents[:n_sentences]))
-    if sents:
-        return strip_chars_length_markers(" ".join(sents))
-    if top_title:
-        return strip_chars_length_markers(top_title)
-    return strip_chars_length_markers((blob or "")[:1200])
+    head = body[:300].strip()
+    return head if head else fallback

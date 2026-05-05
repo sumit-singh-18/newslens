@@ -15,11 +15,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .database import Article, ArticleScore, TopicOutletFraming, normalize_topic
-from .framing_extract import (
-    build_outlet_corpus_snippets,
-    extractive_framing_summary,
-    fallback_framing_best_article,
-)
+from .framing_extract import clean_text
 from .nlp_pipeline import NLPPipeline
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
@@ -299,16 +295,6 @@ NEWSAPI_PAGE_SIZE = 100
 
 class NewsFetcherError(Exception):
     pass
-
-
-def clean_text(text: str | None) -> str:
-    if not text:
-        return ""
-
-    cleaned = re.sub(r"<[^>]+>", " ", text)
-    cleaned = re.sub(r"https?://\S+|www\.\S+", " ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned.strip()
 
 
 def detect_source_categories_for_query(query: str) -> list[str]:
@@ -1145,28 +1131,6 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
             )
         )
         saved_urls.append(raw_row["url"])
-
-    for src in selected_sources:
-        rows_for_src = sorted(
-            [r for r in flat_raw if r["source"] == src],
-            key=lambda r: -int(r.get("relevance_score") or 0),
-        )
-        corpus = build_outlet_corpus_snippets(rows_for_src)
-        framing_text = extractive_framing_summary(nlp, corpus, k=2)
-        if not framing_text.strip():
-            framing_text = fallback_framing_best_article(rows_for_src, nlp, n_sentences=2)
-        if not framing_text.strip() and corpus.strip():
-            framing_text = corpus[:1200]
-        if not framing_text.strip() and rows_for_src:
-            framing_text = (rows_for_src[0].get("title") or "").strip() or corpus[:800]
-        db.add(
-            TopicOutletFraming(
-                topic=topic,
-                source=src,
-                framing_summary=framing_text.strip() or "Coverage snapshot unavailable.",
-                updated_at=now_utc,
-            )
-        )
 
     db.commit()
     return {

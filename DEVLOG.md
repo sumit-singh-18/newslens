@@ -597,3 +597,19 @@ Post-fetch filtering missed many **NewsAPI** off-topic hits; scoring before pers
 ### Verification
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
 - **`npm run build`**: success.
+
+## [2026-05-04] - Inline framing summaries + unified `clean_text`
+
+### What changed
+- **`backend/framing_extract.py`**: Replaced NLP-heavy extractive framing with **`clean_text()`** (NewsAPI **`[+N chars]`** / **`(+N chars)`**, HTML tags, **`http…`** URLs, whitespace), **`get_framing_summary(articles, topic, source)`** (sort by **`relevance_score`** DESC → highest article → first three sentences with ≥6 words after **`Lead:`** strip), fallback to first **300** chars of cleaned body or **`Coverage snapshot unavailable.`**. Kept **`strip_chars_length_markers`** as an alias of **`clean_text()`** for compatibility.
+- **`backend/main.py`**: Removed DB reads from **`topic_outlet_framing`**; **`_framing_by_source_for_outlets`** loads **`Article`** rows (topic + source + **`MIN_RELEVANCE_SCORE`**) and calls **`get_framing_summary`** per outlet for **`/analyze`** and **`/scores`**. **`_sanitize_outlet_texts_for_api`** uses **`clean_text()`** on **`framing_summary`**, **`top_article_preview`**, **`top_article_headline`**, **`headline`** (not **`missing_angle`** / reasoning).
+- **`backend/news_fetcher.py`**: Imports **`clean_text`** from **`framing_extract`** (removed duplicate); **stopped inserting** into **`TopicOutletFraming`** on fetch (table retained; **`main.py`** referenced it previously — keep table, no new rows). Deletes on topic invalidate unchanged.
+- **`.cursor/.rules/001-backend-fastapi.mdc`**: Documented **`clean_text`** + inline framing convention under **Conventions**.
+
+### Reason
+Persisted extractive framing was brittle; generating summaries from the highest-relevance stored article is simpler and stays aligned with relevance scoring.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass (**22** tests).
+- **`PYTHONPATH=. python3 -c "… DELETE FROM topic_analysis …"`**: cache cleared ( **`articles`** / **`article_scores`** untouched).
+- **`npm run build`** in **`frontend/`**: success (**`bundle.js`** updated).

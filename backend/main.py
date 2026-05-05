@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,8 +30,8 @@ _extra_cors = [
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
-from .database import Article, ArticleScore, TopicOutletFraming, create_tables, get_db, normalize_topic
-from .framing_extract import strip_chars_length_markers
+from .database import Article, ArticleScore, create_tables, get_db, normalize_topic
+from .framing_extract import clean_text, get_framing_summary
 from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import (
     MIN_RELEVANCE_SCORE,
@@ -98,13 +99,23 @@ def _coverage_confidence_status(article_count: int) -> str:
     return "insufficient"
 
 
-def _load_framing_map(topic: str, db: Session) -> dict[str, str]:
-    rows = db.execute(
-        select(TopicOutletFraming.source, TopicOutletFraming.framing_summary).where(
-            TopicOutletFraming.topic == topic
-        )
-    ).all()
-    return {str(r[0]): str(r[1]) for r in rows}
+def _framing_by_source_for_outlets(topic: str, db: Session, sources: list[str]) -> dict[str, str]:
+    """Inline framing from stored articles (topic + source filtered, relevance >= threshold)."""
+    if not sources:
+        return {}
+    rows = list(
+        db.scalars(
+            select(Article).where(
+                Article.topic == topic,
+                Article.source.in_(sources),
+                Article.relevance_score >= MIN_RELEVANCE_SCORE,
+            )
+        ).all()
+    )
+    by_source: dict[str, list[Article]] = defaultdict(list)
+    for a in rows:
+        by_source[a.source].append(a)
+    return {s: get_framing_summary(by_source.get(s, []), topic, s) for s in sources}
 
 
 def _topic_has_unscored_articles(topic: str, db: Session) -> bool:
@@ -239,12 +250,12 @@ _ARTICLE_TRUNC_MARKER_RE = re.compile(
 
 
 def _sanitize_outlet_texts_for_api(out: dict) -> None:
-    """Strip embedded NewsAPI-style length markers from strings returned on /analyze."""
+    """Apply clean_text to user-visible article fields on /analyze (not missing_angle / reasoning)."""
     for key in ("framing_summary", "top_article_preview", "top_article_headline", "headline"):
         v = out.get(key)
         if v is None or not isinstance(v, str):
             continue
-        cleaned = strip_chars_length_markers(v)
+        cleaned = clean_text(v)
         if key in ("top_article_headline", "top_article_preview", "headline"):
             out[key] = cleaned if cleaned else None
         else:
@@ -514,7 +525,7 @@ def get_scores(
         return {"success": True, "data": {"topic": normalized_topic, "outlets": []}, "error": None}
 
     selected = compute_selected_outlets_from_db(normalized_topic, db)
-    framing = _load_framing_map(normalized_topic, db)
+    framing = _framing_by_source_for_outlets(normalized_topic, db, selected)
     return {
         "success": True,
         "data": _build_outlet_scores(normalized_topic, db, selected, framing),
@@ -568,7 +579,7 @@ async def analyze_topic(
             "scored_count": int(n_art),
         }
 
-    framing_map = _load_framing_map(normalized_topic, db)
+    framing_map = _framing_by_source_for_outlets(normalized_topic, db, selected)
     score_data = _build_outlet_scores(normalized_topic, db, selected, framing_map)
 
     llm_result = LLMAnalyzer().generate_missing_angle(normalized_topic, db, selected)
