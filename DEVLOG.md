@@ -646,3 +646,13 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 
 ### What changed
 - **`backend/news_fetcher.py`**: **`sortBy=relevancy`** on **`/v2/everything`**; **`q`** is the hyphen-normalized topic (removed boolean OR expansion). Post-fetch **`_apply_relevance_scoring`** replaced by **`_assign_default_relevance_scores`** (**`MIN_RELEVANCE_SCORE`** on all survivors); newsletter/digest and article-length filters unchanged. **`compute_article_relevance_score`** retained for tests only. **`npm run build`**: success; pytest **22** pass.
+
+## [2026-05-04] - NLP scores on cache hit (`article_scores`)
+
+### What changed
+- **`backend/news_fetcher.py`**: **`_ensure_topic_articles_scored`** — if any **`articles`** row for the topic has no **`article_scores`** row, call **`NLPPipeline.score_topic_articles`** ( **`analyze_batch`** + persist ). Runs before returning **24h cached** fetch results (previously skipped NLP entirely) and once after **`commit`** on a full ingest as a safety net. pytest **22** pass.
+
+## [2026-05-04] - Hero: trending vs recent searches
+
+### What changed
+- **`frontend/app.js`**: **Trending topics** chips use only **`GET /trending-topics`** (removed client fallback list). **Recent searches** is a separate labeled block: **`readRecentHistoryForDisplay`** + **`normalizeRecentSearchDisplay`** (lowercase, hyphens/dots → spaces, trim, dedupe, max **5**); **`updateHistory`** persists normalized keys. **`runSearch`** uses the same normalizer for active topic. **`npm run build`**: success.

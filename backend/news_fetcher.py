@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.orm import Session
 
 from .database import Article, ArticleScore, TopicOutletFraming, normalize_topic
@@ -931,6 +931,28 @@ async def _fetch_everything_for_source_ids(
     return merged
 
 
+def _topic_has_any_unscored_article(topic: str, db: Session) -> bool:
+    """True if at least one article for this topic has no row in article_scores."""
+    row = db.scalar(
+        select(Article.id)
+        .where(Article.topic == topic)
+        .where(~exists(select(1).select_from(ArticleScore).where(ArticleScore.article_id == Article.id)))
+        .limit(1)
+    )
+    return row is not None
+
+
+def _ensure_topic_articles_scored(topic: str, db: Session) -> None:
+    """
+    Run NLP and persist article_scores for this topic if any article is missing scores.
+    Covers 24h cache short-circuit (no new fetch) and repairs inconsistent DB state.
+    """
+    if not _topic_has_any_unscored_article(topic, db):
+        return
+    logger.info("[NewsLens] Unscored articles for topic=%r; running score_topic_articles", topic)
+    NLPPipeline.get_instance().score_topic_articles(topic, db)
+
+
 def _get_recent_cached_articles(topic: str, db: Session) -> list[Article]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     statement = (
@@ -986,6 +1008,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
     if cached_articles:
         selected = compute_selected_outlets_from_db(topic, db)
         if selected:
+            _ensure_topic_articles_scored(topic, db)
             return {
                 "cached": True,
                 "count": len(cached_articles),
@@ -1131,6 +1154,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         saved_urls.append(raw_row["url"])
 
     db.commit()
+    _ensure_topic_articles_scored(topic, db)
     return {
         "cached": False,
         "count": len(saved_urls),

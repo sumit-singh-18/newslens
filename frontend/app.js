@@ -40,13 +40,34 @@ const HISTORY_KEY = "newslens-search-history";
 const READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 const DEFAULT_SERIES_LABEL = "14d";
 
-/** Shown when /trending-topics fails or returns empty (matches backend defaults). */
-const FALLBACK_TRENDING_CHIPS = [
-  { topic: "trade war", count: 0 },
-  { topic: "climate change", count: 0 },
-  { topic: "artificial intelligence", count: 0 },
-  { topic: "us-iran conflict", count: 0 },
-];
+/** Normalize stored/display recent-search labels: lowercase, hyphens/dots → spaces, collapse WS. */
+function normalizeRecentSearchDisplay(raw) {
+  let s = String(raw ?? "").trim().toLowerCase();
+  s = s.replace(/[-.]+/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  return s;
+}
+
+/** Dedupe by normalized label; max 5 (order preserved). */
+function readRecentHistoryForDisplay() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const item of parsed) {
+      const label = normalizeRecentSearchDisplay(item);
+      if (!label) continue;
+      if (seen.has(label)) continue;
+      seen.add(label);
+      out.push(label);
+      if (out.length >= 5) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
 
 function validateSearchTopicInput(raw) {
   const t = String(raw ?? "").trim();
@@ -672,24 +693,29 @@ const biasBadgeClass = (label) => {
   return "badge gray-bg";
 };
 
-const readHistory = () => {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
-  } catch {
-    return [];
-  }
-};
-
 function updateHistory(term) {
-  const topic = term.trim();
-  if (!topic) return;
-  const next = [
-    topic,
-    ...readHistory().filter(
-      (item) => String(item ?? "").toLowerCase() !== topic.toLowerCase()
-    ),
-  ].slice(0, 5);
+  const normalized = normalizeRecentSearchDisplay(term);
+  if (!normalized) return;
+  const prev = (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+  const merged = [
+    normalized,
+    ...prev.map((x) => normalizeRecentSearchDisplay(x)).filter((x) => x && x !== normalized),
+  ];
+  const seen = new Set();
+  const next = [];
+  for (const x of merged) {
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    next.push(x);
+    if (next.length >= 5) break;
+  }
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
 
@@ -2066,7 +2092,7 @@ function Hero({
             ? Array.from({ length: 7 }).map((_, i) => (
                 <span key={`trend-skel-${i}`} className="suggestion-tag suggestion-tag-skeleton" aria-hidden />
               ))
-            : (trendingTopics.length ? trendingTopics : FALLBACK_TRENDING_CHIPS).map((row) => (
+            : trendingTopics.map((row) => (
                 <button
                   key={row.topic}
                   type="button"
@@ -2096,12 +2122,15 @@ function Hero({
           </button>
         </div>
       ) : null}
-      <div className="history-row">
-        {history.map((item) => (
-          <button key={item} className="history-chip" onClick={() => runSearch(item)}>
-            {item}
-          </button>
-        ))}
+      <div className="suggested-topics" style={{ marginTop: "20px" }}>
+        <p className="suggested-topics-label">Recent searches</p>
+        <div className="history-row">
+          {history.map((item) => (
+            <button key={item} className="history-chip" onClick={() => runSearch(item)}>
+              {item}
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -2110,7 +2139,7 @@ function Hero({
 function App() {
   const [searchInput, setSearchInput] = useState("");
   const [topic, setTopic] = useState("");
-  const [history, setHistory] = useState(readHistory);
+  const [history, setHistory] = useState(() => readRecentHistoryForDisplay());
   const searchRef = useRef(null);
   const lastSuccessfulTopicRef = useRef("");
   const [searchValidationError, setSearchValidationError] = useState(null);
@@ -2133,7 +2162,7 @@ function App() {
   });
 
   useEffect(() => {
-    setHistory(readHistory());
+    setHistory(readRecentHistoryForDisplay());
   }, []);
 
   useEffect(() => {
@@ -2160,13 +2189,13 @@ function App() {
   // #endregion
 
   const runSearch = (nextTopic) => {
-    const normalized = nextTopic.trim();
+    const normalized = normalizeRecentSearchDisplay(nextTopic);
     if (!normalized) return;
     setSearchValidationError(null);
     setTopic(normalized);
     setSearchInput(normalized);
     updateHistory(normalized);
-    setHistory(readHistory());
+    setHistory(readRecentHistoryForDisplay());
     setCompareSelection([]);
   };
 
