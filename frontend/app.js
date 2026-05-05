@@ -2165,6 +2165,10 @@ function App() {
     });
   };
 
+  const handleStartAnalysis = () => {
+    focusSearchArea();
+  };
+
   const handleTryAgainAfterValidation = () => {
     const prev = lastSuccessfulTopicRef.current;
     if (prev) {
