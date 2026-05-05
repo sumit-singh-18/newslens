@@ -613,3 +613,14 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass (**22** tests).
 - **`PYTHONPATH=. python3 -c "… DELETE FROM topic_analysis …"`**: cache cleared ( **`articles`** / **`article_scores`** untouched).
 - **`npm run build`** in **`frontend/`**: success (**`bundle.js`** updated).
+
+## [2026-05-04] - Dynamic bias spectrum bar + trending topic chips
+
+### What changed
+- **`frontend/app.js`**: **`BiasSpectrum`** segment widths and **`ResultsHeader`** bias mix copy use **`outletBiasSpectrumPercentages(outlets)`** — **`dominant_bias_label`** mapped to **LEFT** / **CENTER** / **RIGHT**, **5%** floor per band then proportional split of the remaining **85%** by outlet counts; **`roundThreeTo100`** yields integers summing to **100**. Bar segments use **`width: N%`** with **`transition: width 0.5s ease`**. **`fetchTrendingTopics`**, **`useQuery`** on load, hero label **Trending topics** (styled uppercase), skeleton chips while loading, chip **`runSearch`**; **`FALLBACK_TRENDING_CHIPS`** when API returns no rows.
+- **`frontend/styles.css`**: **`spectrum-segment`** width transition; **`suggestion-tag-skeleton`** shimmer.
+- **`backend/main.py`**: **`GET /trending-topics`** → **`data.topics`** from **`topic_analysis`** (**`GROUP BY`** **`topic`**, **`ORDER BY`** **`COUNT(*)`** **`DESC`**, **`MAX(created_at)`** **`DESC`**, limit **8**); pads with **`trade war`**, **`climate change`**, **`artificial intelligence`**, **`us-iran conflict`** when **`DISTINCT`** topics **< 4** or before padding fewer than **8** entries.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass (**22** tests).
+- **`npm run build`** in **`frontend/`**: success (**`bundle.js`** updated).

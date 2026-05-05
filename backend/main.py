@@ -30,7 +30,7 @@ _extra_cors = [
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
-from .database import Article, ArticleScore, create_tables, get_db, normalize_topic
+from .database import Article, ArticleScore, TopicAnalysis, create_tables, get_db, normalize_topic
 from .framing_extract import clean_text, get_framing_summary
 from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import (
@@ -43,6 +43,13 @@ from .news_fetcher import (
 
 DEFAULT_TOPIC_TREND_DAYS = 7
 DEFAULT_OUTLET_SERIES_DAYS = 14
+
+DEFAULT_TRENDING_FALLBACK = (
+    "trade war",
+    "climate change",
+    "artificial intelligence",
+    "us-iran conflict",
+)
 from .nlp_pipeline import NLPPipeline
 
 _nlp_pipeline: NLPPipeline | None = None
@@ -488,6 +495,31 @@ def _topic_volume_trend(topic: str, db: Session, days: int, outlet_names: list[s
     return result
 
 
+def _trending_topics_list(db: Session) -> list[dict]:
+    """Top topics by topic_analysis row count; pad with defaults when the DB has few distinct topics."""
+    cnt = func.count(TopicAnalysis.id).label("cnt")
+    last_at = func.max(TopicAnalysis.created_at).label("last_at")
+    rows = db.execute(
+        select(TopicAnalysis.topic, cnt, last_at).group_by(TopicAnalysis.topic).order_by(desc(cnt), desc(last_at)).limit(8)
+    ).all()
+
+    out: list[dict] = [{"topic": str(r[0]), "count": int(r[1])} for r in rows]
+    seen = {normalize_topic(item["topic"]) for item in out}
+
+    n_distinct = db.scalar(select(func.count(func.distinct(TopicAnalysis.topic)))) or 0
+
+    if n_distinct < 4 or len(out) < 8:
+        for label in DEFAULT_TRENDING_FALLBACK:
+            if len(out) >= 8:
+                break
+            nt = normalize_topic(label)
+            if nt not in seen:
+                out.append({"topic": label, "count": 0})
+                seen.add(nt)
+
+    return out[:8]
+
+
 @router.get("/health", response_model=HealthResponse)
 def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     db.execute(text("SELECT 1"))
@@ -691,6 +723,15 @@ def get_topic_trend(
             "days": days,
             "series": _topic_volume_trend(normalized, db, days, outlets_for_topic),
         },
+        "error": None,
+    }
+
+
+@router.get("/trending-topics", response_model=AnalyzeResponse)
+def get_trending_topics(db: Session = Depends(get_db)) -> AnalyzeResponse:
+    return {
+        "success": True,
+        "data": {"topics": _trending_topics_list(db)},
         "error": None,
     }
 

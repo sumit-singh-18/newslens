@@ -40,7 +40,13 @@ const HISTORY_KEY = "newslens-search-history";
 const READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 const DEFAULT_SERIES_LABEL = "14d";
 
-const SUGGESTED_TOPICS = ["15-Minute Cities", "Digital Pound", "Right to Repair"];
+/** Shown when /trending-topics fails or returns empty (matches backend defaults). */
+const FALLBACK_TRENDING_CHIPS = [
+  { topic: "trade war", count: 0 },
+  { topic: "climate change", count: 0 },
+  { topic: "artificial intelligence", count: 0 },
+  { topic: "us-iran conflict", count: 0 },
+];
 
 function validateSearchTopicInput(raw) {
   const t = String(raw ?? "").trim();
@@ -697,18 +703,24 @@ function updateHistory(term) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
 
-function spectrumSegmentWidths(biasDistribution, outlets) {
-  const fromApi = normalizeBiasDistribution(biasDistribution);
-  if (fromApi) {
-    const sum = fromApi.left_pct + fromApi.center_pct + fromApi.right_pct;
-    if (sum > 0) {
-      return {
-        left: fromApi.left_pct / sum,
-        center: fromApi.center_pct / sum,
-        right: fromApi.right_pct / sum,
-      };
-    }
+/** Largest-remainder integer percentages that sum to 100. */
+function roundThreeTo100(floats) {
+  const f = floats.map((x) => Math.floor(x));
+  let rem = 100 - f[0] - f[1] - f[2];
+  const order = [0, 1, 2].sort((i, j) => floats[j] - f[j] - (floats[i] - f[i]));
+  for (let k = 0; k < rem; k += 1) {
+    f[order[k]] += 1;
   }
+  return f;
+}
+
+const SPECTRUM_MIN_SEG_PCT = 5;
+
+/**
+ * Visual + header bias mix from outlet dominant_bias_label buckets (LEFT/CENTER/RIGHT).
+ * Each band gets at least 5% width; remaining 85% split by outlet counts (matches backend bias buckets).
+ */
+function outletBiasSpectrumPercentages(outlets) {
   const list = Array.isArray(outlets) ? outlets : [];
   let nl = 0;
   let nc = 0;
@@ -720,9 +732,33 @@ function spectrumSegmentWidths(biasDistribution, outlets) {
     else if (b === "right") nr += 1;
     else nc += 1;
   }
-  const t = nl + nc + nr;
-  if (t === 0) return { left: 1 / 3, center: 1 / 3, right: 1 / 3 };
-  return { left: nl / t, center: nc / t, right: nr / t };
+  const T = nl + nc + nr;
+  if (T === 0) {
+    const third = 100 / 3;
+    const [left_pct, center_pct, right_pct] = roundThreeTo100([third, third, third]);
+    return {
+      left_pct,
+      center_pct,
+      right_pct,
+      text: `${left_pct}% left, ${center_pct}% center, ${right_pct}% right`,
+    };
+  }
+  const remainder = 100 - 3 * SPECTRUM_MIN_SEG_PCT;
+  const rawL = SPECTRUM_MIN_SEG_PCT + (nl / T) * remainder;
+  const rawC = SPECTRUM_MIN_SEG_PCT + (nc / T) * remainder;
+  const rawR = SPECTRUM_MIN_SEG_PCT + (nr / T) * remainder;
+  const [left_pct, center_pct, right_pct] = roundThreeTo100([rawL, rawC, rawR]);
+  return {
+    left_pct,
+    center_pct,
+    right_pct,
+    text: `${left_pct}% left, ${center_pct}% center, ${right_pct}% right`,
+  };
+}
+
+function spectrumSegmentWidths(outlets) {
+  const p = outletBiasSpectrumPercentages(outlets);
+  return { left: p.left_pct, center: p.center_pct, right: p.right_pct };
 }
 
 const SPECTRUM_PROXIMITY_SCORE = 0.05;
@@ -828,26 +864,21 @@ async function fetchTopicTrend(topic, days = 7) {
   return payload.data;
 }
 
-/** Bias mix percentages come from the API only (/analyze bias_distribution). */
-function computeBiasDistribution(apiDist) {
-  const fromApi = normalizeBiasDistribution(apiDist);
-  if (fromApi) {
-    const lp = fromApi.left_pct;
-    const cp = fromApi.center_pct;
-    const rp = fromApi.right_pct;
-    return {
-      left: lp,
-      center: cp,
-      right: rp,
-      text: `${lp}% left, ${cp}% center, ${rp}% right`,
-    };
+async function fetchTrendingTopics() {
+  const response = await fetch(`${API_BASE_URL}/trending-topics`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Failed to load trending topics.");
   }
-  return {
-    left: 0,
-    center: 0,
-    right: 0,
-    text: "Bias mix unavailable.",
-  };
+  const payload = await response.json();
+  if (!payload.success) {
+    throw new Error(payload.error || "Trending topics request failed.");
+  }
+  const topics = payload.data && Array.isArray(payload.data.topics) ? payload.data.topics : [];
+  return topics.map((row) => ({
+    topic: typeof row.topic === "string" ? row.topic : String(row.topic ?? ""),
+    count: typeof row.count === "number" ? row.count : Number(row.count) || 0,
+  }));
 }
 
 function extremOutlets(outlets) {
@@ -870,12 +901,9 @@ function LoadingSkeleton() {
   );
 }
 
-function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExtremes, isFetching }) {
+function BiasSpectrum({ outlets, articlesAnalyzed, spectrumExtremes, isFetching }) {
   const list = Array.isArray(outlets) ? outlets : [];
-  const widths = useMemo(
-    () => spectrumSegmentWidths(biasDistribution, list),
-    [biasDistribution, list]
-  );
+  const widths = useMemo(() => spectrumSegmentWidths(list), [list]);
   const extremes = useMemo(() => {
     const fb = extremOutlets(list);
     const ml = spectrumExtremes?.most_left_outlet;
@@ -930,14 +958,17 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
           className={`spectrum-gradient-bar${isFetching ? " spectrum-bar-shimmer" : ""}`}
           aria-hidden="true"
         >
-          <div className="spectrum-segment spectrum-segment-left" style={{ flex: widths.left }} />
+          <div
+            className="spectrum-segment spectrum-segment-left"
+            style={{ width: `${widths.left}%`, flex: "0 0 auto" }}
+          />
           <div
             className="spectrum-segment spectrum-segment-center"
-            style={{ flex: widths.center }}
+            style={{ width: `${widths.center}%`, flex: "0 0 auto" }}
           />
           <div
             className="spectrum-segment spectrum-segment-right"
-            style={{ flex: widths.right }}
+            style={{ width: `${widths.right}%`, flex: "0 0 auto" }}
           />
         </div>
         <div
@@ -1881,8 +1912,8 @@ function Header({ onStartAnalysis }) {
   );
 }
 
-function ResultsHeader({ topic, outlets, biasDistribution, spectrumExtremes, onOpenReadAcross }) {
-  const dist = useMemo(() => computeBiasDistribution(biasDistribution), [biasDistribution]);
+function ResultsHeader({ topic, outlets, spectrumExtremes, onOpenReadAcross }) {
+  const dist = useMemo(() => outletBiasSpectrumPercentages(outlets), [outlets]);
   const ex = useMemo(() => {
     const fb = extremOutlets(outlets);
     const ml = spectrumExtremes?.most_left_outlet;
@@ -1960,7 +1991,6 @@ function AnalysisResults({
       <ResultsHeader
         topic={data.topic || ""}
         outlets={outlets}
-        biasDistribution={data.bias_distribution}
         spectrumExtremes={{
           most_left_outlet: data.most_left_outlet,
           most_right_outlet: data.most_right_outlet,
@@ -1976,7 +2006,6 @@ function AnalysisResults({
       ) : null}
       <BiasSpectrum
         outlets={outlets}
-        biasDistribution={data.bias_distribution}
         articlesAnalyzed={
           data.scoring && typeof data.scoring.article_count === "number"
             ? data.scoring.article_count
@@ -2016,6 +2045,8 @@ function Hero({
   onTryAgainValidation,
   history,
   runSearch,
+  trendingTopics,
+  trendingLoading,
 }) {
   return (
     <section className="hero" id="search-anchor">
@@ -2039,18 +2070,22 @@ function Hero({
         </button>
       </form>
       <div className="suggested-topics">
-        <p className="suggested-topics-label">Suggested topics</p>
+        <p className="suggested-topics-label">Trending topics</p>
         <div className="suggested-topics-row">
-          {SUGGESTED_TOPICS.map((label) => (
-            <button
-              key={label}
-              type="button"
-              className="suggestion-tag"
-              onClick={() => runSearch(label)}
-            >
-              {label}
-            </button>
-          ))}
+          {trendingLoading
+            ? Array.from({ length: 7 }).map((_, i) => (
+                <span key={`trend-skel-${i}`} className="suggestion-tag suggestion-tag-skeleton" aria-hidden />
+              ))
+            : (trendingTopics.length ? trendingTopics : FALLBACK_TRENDING_CHIPS).map((row) => (
+                <button
+                  key={row.topic}
+                  type="button"
+                  className="suggestion-tag"
+                  onClick={() => runSearch(row.topic)}
+                >
+                  {row.topic}
+                </button>
+              ))}
         </div>
       </div>
       {searchValidationError ? (
@@ -2097,6 +2132,13 @@ function App() {
     queryFn: () => fetchAnalysis(topic),
     enabled: Boolean(topic),
     placeholderData: keepPreviousData,
+    retry: 1,
+  });
+
+  const trendingQuery = useQuery({
+    queryKey: ["trending-topics"],
+    queryFn: fetchTrendingTopics,
+    staleTime: 60_000,
     retry: 1,
   });
 
@@ -2214,6 +2256,8 @@ function App() {
         onTryAgainValidation={handleTryAgainAfterValidation}
         history={history}
         runSearch={runSearch}
+        trendingTopics={trendingQuery.data || []}
+        trendingLoading={trendingQuery.isLoading}
       />
 
       {!topic ? (
