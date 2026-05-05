@@ -457,16 +457,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/** Prefer stored framing; never show the empty-state copy when the outlet has articles. */
-function outletFramingBody(outlet) {
-  const hasArticles = (outlet.article_count || 0) > 0;
-  if (outlet.framing_summary) return outlet.framing_summary;
-  if (outlet.missing_angle) return outlet.missing_angle;
-  if (hasArticles && outlet.headline) return `Lead: ${outlet.headline}`;
-  if (hasArticles) return "Topic coverage is available; framing snippet missing for this snapshot.";
-  return "No framing summary available yet for this outlet.";
-}
-
 function normalizeOutlet(o) {
   if (!o || typeof o !== "object") {
     return {
@@ -1163,7 +1153,7 @@ function OutletCard({ outlet, compareSelected, onCompareClick }) {
           {outlet.dominant_sentiment_label || "Neutral"}
         </p>
       </div>
-      <p className="body">{outletFramingBody(outlet)}</p>
+      {outlet.framing_summary ? <p className="body">{outlet.framing_summary}</p> : null}
       <div className="metric-row">
         <span>Sentiment score</span>
         <strong>

@@ -624,3 +624,10 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 ### Verification
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass (**22** tests).
 - **`npm run build`** in **`frontend/`**: success (**`bundle.js`** updated).
+
+## [2026-05-04] - Framing: boilerplate filter + hide empty summary
+
+### What changed
+- **`backend/framing_extract.py`**: Drop sentences matching boilerplate substrings (copyright, subscribe, **©**, read more, etc.); still require **≥6** words; require **≥2** usable sentences or return **`""`** (no title/body fallback). **`main.py`** sanitization maps empty **`framing_summary`** to **`null`**.
+- **`frontend/app.js`**: **`OutletCard`** renders the framing **`<p className="body">`** only when **`framing_summary`** is set.
+- Cleared **`topic_analysis`** cache; **`npm run build`**: success.

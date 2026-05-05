@@ -3,6 +3,19 @@ from __future__ import annotations
 import re
 from typing import Any
 
+_FRAMING_BOILERPLATE_SUBSTRINGS = (
+    "copyright",
+    "all rights reserved",
+    "©",
+    "subscribe",
+    "sign up",
+    "advertisement",
+    "click here",
+    "read more",
+    "privacy policy",
+    "terms of service",
+)
+
 
 def clean_text(text: str | None) -> str:
     if not text:
@@ -20,18 +33,40 @@ def strip_chars_length_markers(text: str | None) -> str:
     return clean_text(text)
 
 
+def _sentence_has_boilerplate(sentence: str) -> bool:
+    low = sentence.lower()
+    for needle in _FRAMING_BOILERPLATE_SUBSTRINGS:
+        if needle == "©":
+            if "©" in sentence:
+                return True
+        elif needle in low:
+            return True
+    return False
+
+
+def _filter_framing_sentences(sentences: list[str]) -> list[str]:
+    min_words = 6
+    out: list[str] = []
+    for raw in sentences:
+        s = raw.strip()
+        if len(s.split()) < min_words:
+            continue
+        if _sentence_has_boilerplate(s):
+            continue
+        out.append(s)
+    return out
+
+
 def get_framing_summary(articles: list[Any], topic: str, source: str) -> str:
     """
-    First up to three sentences (6+ words each) from the highest–relevance_score article body.
-    topic and source are accepted for API stability; filtering is the caller's responsibility.
+    Up to three sentences (each ≥6 words, no boilerplate) from the highest–relevance article.
+    Returns "" if fewer than two usable sentences — callers should omit framing in the UI.
     """
-    _ = topic  # reserved for logging / future use
+    _ = topic
     _ = source
 
-    fallback = "Coverage snapshot unavailable."
-
     if not articles:
-        return fallback
+        return ""
 
     sorted_articles = sorted(articles, key=lambda a: -int(getattr(a, "relevance_score", None) or 0))
     top = sorted_articles[0]
@@ -45,14 +80,12 @@ def get_framing_summary(articles: list[Any], topic: str, source: str) -> str:
         body = re.sub(r"^\s*Lead:\s*", "", body, flags=re.IGNORECASE).strip()
 
     if not body:
-        return fallback
+        return ""
 
     sentences = re.split(r"(?<=[.!?])\s+", body)
-    good = [s.strip() for s in sentences if len(s.split()) >= 6]
+    good = _filter_framing_sentences(sentences)
+    if len(good) < 2:
+        return ""
     picked = good[:3]
-    if picked:
-        out = " ".join(picked).strip()
-        return out if out else fallback
-
-    head = body[:300].strip()
-    return head if head else fallback
+    out = " ".join(picked).strip()
+    return out

@@ -263,10 +263,7 @@ def _sanitize_outlet_texts_for_api(out: dict) -> None:
         if v is None or not isinstance(v, str):
             continue
         cleaned = clean_text(v)
-        if key in ("top_article_headline", "top_article_preview", "headline"):
-            out[key] = cleaned if cleaned else None
-        else:
-            out[key] = cleaned
+        out[key] = cleaned if cleaned else None
 
 
 def _strip_truncation_markers(text: str) -> str:
