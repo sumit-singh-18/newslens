@@ -641,3 +641,8 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 
 ### What changed
 - **`backend/news_fetcher.py`**: At the start of **`fetch_and_store_articles`**, **`_normalize_fetch_topic_input`** turns **`-` / `_` → spaces**, collapses whitespace, lowercases. **`_newsapi_q_with_expansions`** maps **`us election` / `us elections`** to **`us election OR american election OR presidential race`** for the **`q`** sent to NewsAPI. **`npm run build`**: success; pytest **22** pass.
+
+## [2026-05-04] - NewsAPI relevancy: drop post-fetch keyword relevance
+
+### What changed
+- **`backend/news_fetcher.py`**: **`sortBy=relevancy`** on **`/v2/everything`**; **`q`** is the hyphen-normalized topic (removed boolean OR expansion). Post-fetch **`_apply_relevance_scoring`** replaced by **`_assign_default_relevance_scores`** (**`MIN_RELEVANCE_SCORE`** on all survivors); newsletter/digest and article-length filters unchanged. **`compute_article_relevance_score`** retained for tests only. **`npm run build`**: success; pytest **22** pass.

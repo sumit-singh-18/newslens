@@ -37,15 +37,6 @@ def _normalize_fetch_topic_input(raw: str) -> str:
     return normalize_topic(s)
 
 
-def _newsapi_q_with_expansions(canonical_topic: str) -> str:
-    """Map canonical topic to NewsAPI `q` (boolean OR where helpful)."""
-    t = re.sub(r"\s+", " ", (canonical_topic or "").strip())
-    tl = t.lower()
-    if tl in ("us elections", "us election"):
-        return "us election OR american election OR presidential race"
-    return canonical_topic
-
-
 # Credibility-ranked vetted pools — NewsAPI publisher IDs only (see https://newsapi.org/sources).
 # Note: the everything endpoint accepts at most 20 `sources` per request; multi-chunk fetching is used.
 VETTED_SOURCES_BY_CATEGORY: dict[str, tuple[str, ...]] = {
@@ -407,7 +398,7 @@ def _fails_newsletter_title_only(row: dict[str, Any], user_topic: str) -> bool:
 
 
 def _article_passes_full_quality(row: dict[str, Any], user_topic: str) -> bool:
-    """Length cap and newsletter rule. Topic fit is enforced via relevance scoring before persistence."""
+    """Length cap and newsletter/digest title rule. Search relevance comes from NewsAPI (sortBy=relevancy)."""
     content = row.get("content") or ""
     if len(content) > _MAX_ARTICLE_BODY_CHARS:
         return False
@@ -714,23 +705,15 @@ def compute_article_relevance_score(topic: str, row: dict[str, Any]) -> tuple[in
     return score, passes
 
 
-def _apply_relevance_scoring(by_source: dict[str, list[dict[str, Any]]], user_topic: str) -> int:
-    """Remove low-relevance rows; attach relevance_score to survivors. Returns number removed."""
-    removed = 0
-    for src in list(by_source.keys()):
-        kept: list[dict[str, Any]] = []
-        for r in by_source[src]:
-            score, ok = compute_article_relevance_score(user_topic, r)
-            r["relevance_score"] = score
-            if ok:
-                kept.append(r)
-            else:
-                removed += 1
-        if kept:
-            by_source[src] = kept
-        else:
-            del by_source[src]
-    return removed
+def _assign_default_relevance_scores(by_source: dict[str, list[dict[str, Any]]]) -> None:
+    """
+    Do not keyword-filter after fetch — NewsAPI `q` + sortBy=relevancy ranks articles.
+    Assign a uniform passing score so DB/outlet aggregation (`>= MIN_RELEVANCE_SCORE`) stays consistent.
+    Rows removed earlier (newsletter/quality) never reach here; we never persist relevance_score 0.
+    """
+    for rows in by_source.values():
+        for r in rows:
+            r["relevance_score"] = MIN_RELEVANCE_SCORE
 
 
 def suggest_broader_terms(topic: str) -> list[str]:
@@ -924,7 +907,7 @@ async def _fetch_everything_for_source_ids(
     base_params: dict[str, Any] = {
         "q": q,
         "language": "en",
-        "sortBy": "publishedAt",
+        "sortBy": "relevancy",
         "pageSize": NEWSAPI_PAGE_SIZE,
     }
     chunks = [
@@ -991,16 +974,12 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
     relaxed_q = relax_search_query(topic)
     q_for_full = relaxed_q if relaxed_q else topic
 
-    q_primary = _newsapi_q_with_expansions(topic)
-    q_relaxed = _newsapi_q_with_expansions(relaxed_q) if relaxed_q else q_primary
-    q_full = _newsapi_q_with_expansions(q_for_full)
-
     attempt_specs: list[tuple[list[str], str, list[str]]] = [
-        (narrow_pool_ids, q_primary, source_categories),
+        (narrow_pool_ids, topic, source_categories),
     ]
     if relaxed_q != topic:
-        attempt_specs.append((narrow_pool_ids, q_relaxed, source_categories))
-    attempt_specs.append((full_pool_ids, q_full, list(CATEGORY_ORDER)))
+        attempt_specs.append((narrow_pool_ids, relaxed_q, source_categories))
+    attempt_specs.append((full_pool_ids, q_for_full, list(CATEGORY_ORDER)))
     fetch_attempts = _unique_fetch_attempts(attempt_specs)
 
     cached_articles = _get_recent_cached_articles(topic, db)
@@ -1067,13 +1046,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
             topic,
         )
 
-    _n_rel = _apply_relevance_scoring(by_source, topic)
-    if _n_rel:
-        logger.info(
-            "[NewsLens] dropped %s articles below relevance threshold (topic=%r)",
-            _n_rel,
-            topic,
-        )
+    _assign_default_relevance_scores(by_source)
 
     eligible_sources = _qualifying_source_names(by_source, MIN_ARTICLES_PER_SOURCE)
     if len(eligible_sources) < MIN_RELEVANT_OUTLETS_FOR_FETCH:
