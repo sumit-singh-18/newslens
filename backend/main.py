@@ -30,6 +30,7 @@ _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
 from .database import Article, ArticleScore, TopicOutletFraming, create_tables, get_db, normalize_topic
+from .framing_extract import strip_chars_length_markers
 from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import (
     MIN_RELEVANCE_SCORE,
@@ -235,6 +236,19 @@ _ARTICLE_TRUNC_MARKER_RE = re.compile(
     r"\[\s*\+?\d+\s*chars?\s*\]|\(\s*\+?\d+\s*chars?\s*\)|\[\s*\d+\s*chars?\s*\]",
     re.IGNORECASE,
 )
+
+
+def _sanitize_outlet_texts_for_api(out: dict) -> None:
+    """Strip embedded NewsAPI-style length markers from strings returned on /analyze."""
+    for key in ("framing_summary", "top_article_preview", "top_article_headline", "headline"):
+        v = out.get(key)
+        if v is None or not isinstance(v, str):
+            continue
+        cleaned = strip_chars_length_markers(v)
+        if key in ("top_article_headline", "top_article_preview", "headline"):
+            out[key] = cleaned if cleaned else None
+        else:
+            out[key] = cleaned
 
 
 def _strip_truncation_markers(text: str) -> str:
@@ -579,6 +593,7 @@ async def analyze_topic(
             merged_outlet["top_article_url"] = None
             merged_outlet["top_article_headline"] = None
             merged_outlet["top_article_preview"] = None
+        _sanitize_outlet_texts_for_api(merged_outlet)
         outlets_with_missing_angle.append(merged_outlet)
 
     bias_distribution = bias_distribution_from_outlets(score_data["outlets"])

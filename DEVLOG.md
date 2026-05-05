@@ -587,3 +587,13 @@ Post-fetch filtering missed many **NewsAPI** off-topic hits; scoring before pers
 
 ### Verification
 - **`npm run build`** in **`frontend/`**: success.
+
+## [2026-05-04] - Framing + API text: strip `[+N chars]` markers
+
+### What changed
+- **`backend/framing_extract.py`**: **`strip_chars_length_markers`** (bracket + paren NewsAPI length markers); applied to all outputs of **`extractive_framing_summary`** and **`fallback_framing_best_article`**.
+- **`backend/main.py`**: **`_sanitize_outlet_texts_for_api`** runs on each merged outlet for **`framing_summary`**, **`top_article_preview`**, **`top_article_headline`**, and **`headline`**. Cleared **`topic_outlet_framing`** + **`topic_analysis`** cache rows locally.
+
+### Verification
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass.
+- **`npm run build`**: success.

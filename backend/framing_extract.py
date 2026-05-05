@@ -9,6 +9,19 @@ logger = logging.getLogger(__name__)
 # Lower than previous 25 so short leads become eligible for scoring.
 SENTENCE_MIN_LEN = 10
 
+_CHARS_BRACKET_MARKER_RE = re.compile(r"\[\s*\+?\d+\s*chars?\s*\]", re.IGNORECASE)
+_CHARS_PAREN_MARKER_RE = re.compile(r"\(\s*\+?\d+\s*chars?\s*\)", re.IGNORECASE)
+
+
+def strip_chars_length_markers(text: str | None) -> str:
+    """Remove embedded NewsAPI length markers (e.g. [+5162 chars]) from extracted framing copy."""
+    if text is None:
+        return ""
+    t = str(text)
+    t = _CHARS_BRACKET_MARKER_RE.sub("", t)
+    t = _CHARS_PAREN_MARKER_RE.sub("", t)
+    return t.strip()
+
 
 def first_n_words(text: str, n: int = 100) -> str:
     words = (text or "").split()
@@ -49,9 +62,9 @@ def extractive_framing_summary(nlp: Any, corpus: str, k: int = 2) -> str:
     )
     if not sents:
         logger.info("[NewsLens] framing extractive: no sentences met min_len; using corpus head")
-        return corpus[:800]
+        return strip_chars_length_markers(corpus[:800])
     if len(sents) <= k:
-        return " ".join(sents)
+        return strip_chars_length_markers(" ".join(sents))
 
     analyses = nlp.analyze_batch(sents)
     scored: list[tuple[float, str]] = []
@@ -78,14 +91,14 @@ def extractive_framing_summary(nlp: Any, corpus: str, k: int = 2) -> str:
             "[NewsLens] framing extractive: all sentence charges ~0 (neutral); using first %d sentences fallback",
             k,
         )
-        return " ".join(sents[:k])
+        return strip_chars_length_markers(" ".join(sents[:k]))
 
     top_k = [s for _, s in scored[:k]]
     joined = " ".join(top_k).strip()
     if not joined:
         logger.info("[NewsLens] framing extractive: top-k join empty after scoring; using first %d sentences", k)
-        return " ".join(sents[:k])
-    return joined
+        return strip_chars_length_markers(" ".join(sents[:k]))
+    return strip_chars_length_markers(joined)
 
 
 def build_outlet_corpus_snippets(article_rows: list[dict[str, Any]]) -> str:
@@ -126,7 +139,7 @@ def fallback_framing_best_article(
         elif title:
             stitched.append(title)
     if not stitched:
-        return top_title
+        return strip_chars_length_markers(top_title)
     analyses = nlp.analyze_batch(stitched)
     best_i = 0
     best_charge = -1.0
@@ -144,9 +157,9 @@ def fallback_framing_best_article(
     blob = f"{title}. {body}" if title and body else (body or title)
     sents = split_sentences(blob)
     if len(sents) >= n_sentences:
-        return " ".join(sents[:n_sentences])
+        return strip_chars_length_markers(" ".join(sents[:n_sentences]))
     if sents:
-        return " ".join(sents)
+        return strip_chars_length_markers(" ".join(sents))
     if top_title:
-        return top_title
-    return (blob or "")[:1200]
+        return strip_chars_length_markers(top_title)
+    return strip_chars_length_markers((blob or "")[:1200])
