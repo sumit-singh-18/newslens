@@ -578,3 +578,12 @@ Post-fetch filtering missed many **NewsAPI** off-topic hits; scoring before pers
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: pass (**22** tests).
 - Cleared **`articles`**, **`article_scores`**, **`topic_analysis`**, **`topic_outlet_framing`** via **`SessionLocal`** script.
 - **`npm run build`** in **`frontend/`**: success.
+
+## [2026-05-04] - Polish: preview markers, spectrum stacking, search validation
+
+### What changed
+- **`backend/main.py`**: **`_strip_truncation_markers`** with regex for **`[+N chars]`** / **`(+N chars)`**-style suffixes; **`_clean_article_body_preview`** applies it before/after length cap so previews end with **`...`** instead of raw NewsAPI markers.
+- **`frontend/app.js`**: Bias spectrum markers in score runs with **≤0.05** difference get cycling **`translateY(-20/0/-40px)`** (with top padding for negative lifts) and labels truncated to **10** characters. Search: require **≥3** characters and at least one Unicode letter; inline red copy; **Try again** for validation (re-runs last successful topic or focuses search) and for API errors (**`query.refetch()`**).
+
+### Verification
+- **`npm run build`** in **`frontend/`**: success.

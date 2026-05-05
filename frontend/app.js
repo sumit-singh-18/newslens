@@ -42,6 +42,17 @@ const DEFAULT_SERIES_LABEL = "14d";
 
 const SUGGESTED_TOPICS = ["15-Minute Cities", "Digital Pound", "Right to Repair"];
 
+function validateSearchTopicInput(raw) {
+  const t = String(raw ?? "").trim();
+  if (!t || t.length < 3) {
+    return { ok: false, message: "Please enter at least 3 characters" };
+  }
+  if (!/\p{L}/u.test(t)) {
+    return { ok: false, message: "Please enter a news topic" };
+  }
+  return { ok: true };
+}
+
 const COVERAGE_STATUS = {
   HIGH: "high",
   DEVELOPING: "developing",
@@ -714,12 +725,30 @@ function spectrumSegmentWidths(biasDistribution, outlets) {
   return { left: nl / t, center: nc / t, right: nr / t };
 }
 
+const SPECTRUM_PROXIMITY_SCORE = 0.05;
+const SPECTRUM_PROXIMITY_LIFTS = [-20, 0, -40];
+
 function assignSpectrumLanes(markers, minGapPct) {
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
   const sorted = [...markers].sort((a, b) => a.score - b.score);
   const laneLastX = [];
   const maxLane = 12;
-  return sorted.map((m) => {
+  const proximityLiftPx = new Array(sorted.length).fill(0);
+  let runStart = 0;
+  for (let i = 1; i <= sorted.length; i += 1) {
+    const breakRun =
+      i === sorted.length || Math.abs(sorted[i].score - sorted[i - 1].score) > SPECTRUM_PROXIMITY_SCORE;
+    if (breakRun) {
+      const runLen = i - runStart;
+      if (runLen >= 2) {
+        for (let j = runStart; j < i; j += 1) {
+          proximityLiftPx[j] = SPECTRUM_PROXIMITY_LIFTS[(j - runStart) % SPECTRUM_PROXIMITY_LIFTS.length];
+        }
+      }
+      runStart = i;
+    }
+  }
+  return sorted.map((m, idx) => {
     // Visual multiplier so small differences don't visually collapse near center.
     const s = clamp(m.score, -1, 1);
     const visualPosition = (s * 1.5 * 50) + 50;
@@ -729,8 +758,13 @@ function assignSpectrumLanes(markers, minGapPct) {
       L += 1;
     }
     laneLastX[L] = x;
-    return { ...m, lane: L, xPct: x };
+    return { ...m, lane: L, xPct: x, proximityLiftPx: proximityLiftPx[idx] };
   });
+}
+
+function spectrumMarkerLabel(name) {
+  const s = String(name || "");
+  return s.length > 10 ? s.slice(0, 10) : s;
 }
 
 function outletMarkerColor(outlet) {
@@ -873,11 +907,17 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
     return assignSpectrumLanes(scored, 4);
   }, [list]);
 
+  const spectrumStripPadTop = useMemo(
+    () =>
+      placedMarkers.reduce((acc, x) => Math.max(acc, -(x.proximityLiftPx ?? 0)), 0),
+    [placedMarkers]
+  );
+
   const stripHeight = useMemo(() => {
     const maxLane = placedMarkers.reduce((m, x) => Math.max(m, x.lane), -1);
     const lanes = maxLane < 0 ? 0 : maxLane + 1;
-    return 36 + lanes * 15;
-  }, [placedMarkers]);
+    return 36 + lanes * 15 + spectrumStripPadTop + 8;
+  }, [placedMarkers, spectrumStripPadTop]);
 
   return (
     <section id="dashboard" className="bias-hero card">
@@ -902,23 +942,33 @@ function BiasSpectrum({ outlets, biasDistribution, articlesAnalyzed, spectrumExt
         </div>
         <div
           className="spectrum-marker-strip"
-          style={{ minHeight: `${stripHeight}px` }}
+          style={{
+            minHeight: `${stripHeight}px`,
+            paddingTop: spectrumStripPadTop > 0 ? `${spectrumStripPadTop}px` : undefined,
+          }}
           role="presentation"
         >
-          {placedMarkers.map(({ outlet, score, lane, xPct }) => (
+          {placedMarkers.map(({ outlet, score, lane, xPct, proximityLiftPx }) => {
+            const lift = proximityLiftPx ?? 0;
+            return (
             <div
               key={outlet.source}
               className="spectrum-marker"
-              style={{ left: `${xPct}%`, top: 4 + lane * 15 }}
+              style={{
+                left: `${xPct}%`,
+                top: 4 + lane * 15,
+                transform: `translateX(-50%) translateY(${lift}px)`,
+              }}
               title={`${outlet.source} — bias score ${score.toFixed(3)}`}
             >
               <span
                 className="spectrum-marker-dot"
                 style={{ background: outletMarkerColor(outlet) }}
               />
-              <span className="spectrum-marker-name">{outlet.source}</span>
+              <span className="spectrum-marker-name">{spectrumMarkerLabel(outlet.source)}</span>
             </div>
-          ))}
+            );
+          })}
         </div>
         <div className="spectrum-axis-labels">
           <span className="spectrum-axis-extreme spectrum-axis-left">{extremes.left}</span>
@@ -1956,11 +2006,14 @@ function AnalysisResults({
 
 function Hero({
   searchInput,
-  setSearchInput,
+  onSearchInputChange,
   onSubmit,
   searchRef,
+  searchValidationError,
   isError,
   error,
+  onRetryFetch,
+  onTryAgainValidation,
   history,
   runSearch,
 }) {
@@ -1979,7 +2032,7 @@ function Hero({
           type="text"
           placeholder="Search a topic (e.g. trade war, AI regulation, climate policy)"
           value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
+          onChange={onSearchInputChange}
         />
         <button className="search-btn" type="submit">
           Analyze
@@ -2000,10 +2053,23 @@ function Hero({
           ))}
         </div>
       </div>
+      {searchValidationError ? (
+        <div style={{ marginTop: 12, textAlign: "center" }}>
+          <p style={{ color: "#b91c1c", fontSize: "0.88rem", margin: "0 0 8px" }}>{searchValidationError}</p>
+          <button type="button" className="history-chip" onClick={onTryAgainValidation}>
+            Try again
+          </button>
+        </div>
+      ) : null}
       {isError ? (
-        <p className="inline-error">
-          Could not load analysis: {error?.message != null ? String(error.message) : String(error)}
-        </p>
+        <div style={{ marginTop: 12, textAlign: "center" }}>
+          <p className="inline-error" style={{ margin: "0 0 8px" }}>
+            Could not load analysis: {error?.message != null ? String(error.message) : String(error)}
+          </p>
+          <button type="button" className="history-chip" onClick={onRetryFetch}>
+            Try again
+          </button>
+        </div>
       ) : null}
       <div className="history-row">
         {history.map((item) => (
@@ -2021,6 +2087,8 @@ function App() {
   const [topic, setTopic] = useState("");
   const [history, setHistory] = useState(readHistory);
   const searchRef = useRef(null);
+  const lastSuccessfulTopicRef = useRef("");
+  const [searchValidationError, setSearchValidationError] = useState(null);
   const [compareSelection, setCompareSelection] = useState([]);
   const [readAcrossOpen, setReadAcrossOpen] = useState(false);
 
@@ -2035,6 +2103,12 @@ function App() {
   useEffect(() => {
     setHistory(readHistory());
   }, []);
+
+  useEffect(() => {
+    if (query.isSuccess && topic) {
+      lastSuccessfulTopicRef.current = topic;
+    }
+  }, [query.isSuccess, topic]);
 
   // #region agent log
   useEffect(() => {
@@ -2056,6 +2130,7 @@ function App() {
   const runSearch = (nextTopic) => {
     const normalized = nextTopic.trim();
     if (!normalized) return;
+    setSearchValidationError(null);
     setTopic(normalized);
     setSearchInput(normalized);
     updateHistory(normalized);
@@ -2065,7 +2140,18 @@ function App() {
 
   const onSubmit = (event) => {
     event.preventDefault();
+    const v = validateSearchTopicInput(searchInput);
+    if (!v.ok) {
+      setSearchValidationError(v.message);
+      return;
+    }
+    setSearchValidationError(null);
     runSearch(searchInput);
+  };
+
+  const onSearchInputChange = (event) => {
+    setSearchValidationError(null);
+    setSearchInput(event.target.value);
   };
 
   const focusSearchArea = () => {
@@ -2079,8 +2165,14 @@ function App() {
     });
   };
 
-  const handleStartAnalysis = () => {
-    focusSearchArea();
+  const handleTryAgainAfterValidation = () => {
+    const prev = lastSuccessfulTopicRef.current;
+    if (prev) {
+      setSearchValidationError(null);
+      runSearch(prev);
+    } else {
+      focusSearchArea();
+    }
   };
 
   const handleTryBroaderSearch = () => {
@@ -2108,11 +2200,14 @@ function App() {
       <Header onStartAnalysis={handleStartAnalysis} />
       <Hero
         searchInput={searchInput}
-        setSearchInput={setSearchInput}
+        onSearchInputChange={onSearchInputChange}
         onSubmit={onSubmit}
         searchRef={searchRef}
+        searchValidationError={searchValidationError}
         isError={query.isError}
         error={query.error}
+        onRetryFetch={() => query.refetch()}
+        onTryAgainValidation={handleTryAgainAfterValidation}
         history={history}
         runSearch={runSearch}
       />

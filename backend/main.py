@@ -230,6 +230,20 @@ def _build_headline_map(topic: str, db: Session, sources: list[str]) -> dict[str
     return headlines
 
 
+# NewsAPI / syndicated bodies often append a truncation marker like [+2038 chars] or (+500 chars).
+_ARTICLE_TRUNC_MARKER_RE = re.compile(
+    r"\[\s*\+?\d+\s*chars?\s*\]|\(\s*\+?\d+\s*chars?\s*\)|\[\s*\d+\s*chars?\s*\]",
+    re.IGNORECASE,
+)
+
+
+def _strip_truncation_markers(text: str) -> str:
+    """Replace trailing '[+N chars]' / '(+N chars)' style markers with an ellipsis."""
+    s = _ARTICLE_TRUNC_MARKER_RE.sub("...", text)
+    s = re.sub(r"(?:\.\.\.){2,}", "...", s)
+    return s.strip()
+
+
 def _clean_article_body_preview(text: str | None, max_chars: int = 300) -> str | None:
     """Strip HTML / URLs and collapse whitespace; return first max_chars or None if empty."""
     if not text:
@@ -237,9 +251,16 @@ def _clean_article_body_preview(text: str | None, max_chars: int = 300) -> str |
     cleaned = re.sub(r"<[^>]+>", " ", text)
     cleaned = re.sub(r"https?://\S+|www\.\S+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = _strip_truncation_markers(cleaned)
     if not cleaned:
         return None
-    return cleaned[:max_chars] if len(cleaned) > max_chars else cleaned
+    if len(cleaned) <= max_chars:
+        return cleaned
+    cleaned = cleaned[:max_chars].rstrip()
+    cleaned = _strip_truncation_markers(cleaned)
+    if not cleaned.endswith("..."):
+        cleaned = f"{cleaned.rstrip('.')}..."
+    return cleaned if cleaned else None
 
 
 def _build_top_article_fields_map(topic: str, db: Session, sources: list[str]) -> dict[str, dict[str, str | None]]:
