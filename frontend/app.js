@@ -506,6 +506,7 @@ function normalizeOutlet(o) {
       top_article_url: null,
       top_article_headline: null,
       top_article_preview: null,
+      credibility_score: null,
     };
   }
   const sl =
@@ -574,7 +575,20 @@ function normalizeOutlet(o) {
       o.top_article_preview == null || o.top_article_preview === ""
         ? null
         : String(o.top_article_preview),
+    credibility_score:
+      typeof o.credibility_score === "number" && Number.isFinite(o.credibility_score)
+        ? o.credibility_score
+        : null,
   };
+}
+
+function credibilityIndicator(score) {
+  const s = typeof score === "number" && Number.isFinite(score) ? score : null;
+  if (s == null) return { label: "Credibility unrated", color: "#94a3b8" };
+  if (s >= 9) return { label: "⬤ High credibility", color: "#16a34a" };
+  if (s >= 7) return { label: "⬤ Credible", color: "#2563eb" };
+  if (s >= 6) return { label: "⬤ Generally credible", color: "#6b7280" };
+  return { label: "Credibility below threshold", color: "#ef4444" };
 }
 
 function normalizeMissingAngleBlock(ma) {
@@ -1197,6 +1211,7 @@ function SourceProfileSection({ outletName, sparklineColor }) {
 function OutletCard({ outlet, outletColorMap, compareSelected, onCompareClick }) {
   const selectedClass = compareSelected ? "outlet-card-selected" : "";
   const accent = outletColorFromMap(outletColorMap, outlet.source);
+  const cred = credibilityIndicator(outlet.credibility_score);
   return (
     <article
       className={`card outlet-card ${selectedClass}`}
@@ -1207,7 +1222,16 @@ function OutletCard({ outlet, outletColorMap, compareSelected, onCompareClick })
       }}
     >
       <div className="outlet-card-top">
-        <h3>{outlet.source}</h3>
+        <div>
+          <h3>{outlet.source}</h3>
+          <p
+            className="micro-muted"
+            style={{ margin: "2px 0 0", fontSize: "0.74rem", color: cred.color }}
+            title="Based on factual reporting record, sourcing standards, and editorial transparency"
+          >
+            {cred.label}
+          </p>
+        </div>
         <button type="button" className="btn-compare" onClick={() => onCompareClick(outlet.source)}>
           Compare
         </button>

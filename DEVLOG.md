@@ -691,3 +691,19 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 - **`backend/news_fetcher.py`**: Restricted **`VETTED_SOURCES_BY_CATEGORY`** to only the approved 15 NewsAPI source IDs: **`associated-press`**, **`reuters`**, **`bbc-news`**, **`nbc-news`**, **`abc-news`**, **`cbs-news`**, **`npr`**, **`the-washington-post`**, **`the-wall-street-journal`**, **`the-guardian-uk`**, **`the-new-york-times`**, **`cnn`**, **`fox-news`**, **`msnbc`**, **`bloomberg`**.
 - **`backend/news_fetcher.py`**: Removed non-approved sources from `SOURCE_DISPLAY_NAMES` so no non-vetted source IDs are recognized in the fetch mapping path.
 - **Verification**: `ALL_VETTED_SOURCE_IDS_RANKED` now prints exactly the approved list and excludes banned IDs (`national-geographic`, `new-scientist`, `newsweek`, `wired`).
+
+## [2026-05-05] - Credibility-score outlet filtering (>=6) replaces hardcoded pools
+
+### What changed
+- **`backend/credibility_scores.py`**: Added **`OUTLET_CREDIBILITY`** mapping, **`MIN_CREDIBILITY = 6`**, and **`get_credibility_score(source_id)`** normalization helper.
+- **`backend/news_fetcher.py`**: Replaced category/pool allowlist behavior with credibility filtering: NewsAPI `/everything` fetch now runs without a `sources` filter, then each article source ID is scored and only outlets with score **>= 6** are retained. Existing ranking still selects top outlets by article count and returns limited-coverage messaging when fewer than 2 credible outlets qualify.
+- **`backend/news_fetcher.py`**: Updated DB-selected outlet fallback to enforce credibility threshold from stored outlet names via source-name→source-id mapping.
+- **`backend/main.py`**: Added **`credibility_score`** to each outlet in analyze scoring output (derived from source ID mapping + credibility helper).
+- **`frontend/app.js`**: Outlet cards now show a credibility indicator under the outlet name with tooltip copy: High credibility (9–10), Credible (7–8), Generally credible (6).
+- **`.cursor/.rules/000-core.mdc`**: Replaced hardcoded outlet-list note with credibility-threshold policy reference to `backend/credibility_scores.py`.
+
+### Verification
+- **`npm run build`** in **`frontend/`**: success.
+- Fetch sanity check:
+  - Topic **`artificial intelligence`** selected outlets: `['CBS News', 'Fox News']` (none of National Geographic/New Scientist/Newsweek/Wired present).
+  - Topic **`trade war`** selected outlets: `['Al Jazeera English', 'CNN', 'Politico']` (none of National Geographic/New Scientist/Newsweek/Wired present).

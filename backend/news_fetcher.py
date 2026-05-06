@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from sqlalchemy import delete, exists, func, select
 from sqlalchemy.orm import Session
 
+from .credibility_scores import MIN_CREDIBILITY, get_credibility_score
 from .database import Article, ArticleScore, TopicOutletFraming, normalize_topic
 from .framing_extract import clean_text
 from .nlp_pipeline import NLPPipeline
@@ -37,30 +38,6 @@ def _normalize_fetch_topic_input(raw: str) -> str:
     return normalize_topic(s)
 
 
-# Credibility-ranked vetted pools — NewsAPI publisher IDs only (see https://newsapi.org/sources).
-# Note: the everything endpoint accepts at most 20 `sources` per request; multi-chunk fetching is used.
-VETTED_SOURCES_BY_CATEGORY: dict[str, tuple[str, ...]] = {
-    "GENERAL": (
-        "associated-press",
-        "reuters",
-        "bbc-news",
-        "nbc-news",
-        "abc-news",
-        "cbs-news",
-        "npr",
-        "the-washington-post",
-        "the-wall-street-journal",
-        "the-guardian-uk",
-        "the-new-york-times",
-        "cnn",
-        "fox-news",
-        "msnbc",
-        "bloomberg",
-    ),
-}
-
-CATEGORY_ORDER: tuple[str, ...] = tuple(VETTED_SOURCES_BY_CATEGORY.keys())
-
 SOURCE_DISPLAY_NAMES: dict[str, str] = {
     "associated-press": "Associated Press",
     "reuters": "Reuters",
@@ -77,6 +54,11 @@ SOURCE_DISPLAY_NAMES: dict[str, str] = {
     "fox-news": "Fox News",
     "msnbc": "MSNBC",
     "bloomberg": "Bloomberg",
+    "pbs": "PBS",
+    "financial-times": "Financial Times",
+    "the-atlantic": "The Atlantic",
+    "time": "TIME",
+    "foreign-policy": "Foreign Policy",
 }
 
 _TECH_KEYWORDS = frozenset(
@@ -206,24 +188,14 @@ _FILLER_TOKENS = frozenset(
 )
 
 
-def _merge_category_source_order() -> tuple[str, ...]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for cat in CATEGORY_ORDER:
-        for sid in VETTED_SOURCES_BY_CATEGORY[cat]:
-            if sid not in seen:
-                seen.add(sid)
-                ordered.append(sid)
-    return tuple(ordered)
-
-
-ALL_VETTED_SOURCE_IDS_RANKED: tuple[str, ...] = _merge_category_source_order()
-ALLOWED_SOURCE_IDS: frozenset[str] = frozenset(ALL_VETTED_SOURCE_IDS_RANKED)
-ALLOWED_OUTLET_DISPLAY_NAMES: frozenset[str] = frozenset(
-    SOURCE_DISPLAY_NAMES[sid] for sid in ALL_VETTED_SOURCE_IDS_RANKED
+ALL_CREDIBLE_SOURCE_IDS_RANKED: tuple[str, ...] = tuple(
+    sorted(
+        (sid for sid in SOURCE_DISPLAY_NAMES.keys() if get_credibility_score(sid) >= MIN_CREDIBILITY),
+        key=lambda sid: (-get_credibility_score(sid), sid),
+    )
 )
 OUTLET_DISPLAY_RANK: dict[str, int] = {
-    SOURCE_DISPLAY_NAMES[sid]: i for i, sid in enumerate(ALL_VETTED_SOURCE_IDS_RANKED)
+    SOURCE_DISPLAY_NAMES[sid]: i for i, sid in enumerate(ALL_CREDIBLE_SOURCE_IDS_RANKED)
 }
 
 TOP_OUTLET_SLOTS = 5
@@ -239,32 +211,13 @@ class NewsFetcherError(Exception):
 
 
 def detect_source_categories_for_query(query: str) -> list[str]:
-    """Always includes GENERAL; adds TECH, FINANCE, and/or SCIENCE_HEALTH when keywords match."""
-    q = query.strip().lower()
-    if not q:
-        return ["GENERAL"]
-    tokens = set(re.findall(r"[a-z0-9]+", q))
-    categories: list[str] = ["GENERAL"]
-    if tokens & _TECH_KEYWORDS:
-        categories.append("TECH")
-    if tokens & _FINANCE_KEYWORDS:
-        categories.append("FINANCE")
-    if tokens & _SCIENCE_HEALTH_KEYWORDS:
-        categories.append("SCIENCE_HEALTH")
-    return categories
+    _ = query
+    return [f"credibility>={MIN_CREDIBILITY}"]
 
 
 def source_ids_for_categories(categories: list[str]) -> list[str]:
-    merged: list[str] = []
-    seen: set[str] = set()
-    for cat in CATEGORY_ORDER:
-        if cat not in categories:
-            continue
-        for sid in VETTED_SOURCES_BY_CATEGORY[cat]:
-            if sid not in seen:
-                seen.add(sid)
-                merged.append(sid)
-    return merged
+    _ = categories
+    return list(ALL_CREDIBLE_SOURCE_IDS_RANKED)
 
 
 def relax_search_query(topic: str) -> str:
@@ -773,17 +726,17 @@ def _ingest_articles_into_buckets(
     incoming_articles: list[dict[str, Any]],
     by_source: dict[str, list[dict[str, Any]]],
     seen_urls: set[str],
-    *,
-    allowed_source_ids: frozenset[str],
-    source_id_to_display: dict[str, str],
 ) -> int:
     added = 0
     for item in incoming_articles:
         src_obj = item.get("source") or {}
         source_id = (src_obj.get("id") or "").strip()
-        if not source_id or source_id not in allowed_source_ids:
+        if not source_id:
             continue
-        source_name = source_id_to_display.get(source_id) or (src_obj.get("name") or "").strip()
+        credibility = get_credibility_score(source_id)
+        if credibility < MIN_CREDIBILITY:
+            continue
+        source_name = SOURCE_DISPLAY_NAMES.get(source_id) or (src_obj.get("name") or "").strip()
         if not source_name:
             continue
         url = (item.get("url") or "").strip()
@@ -799,7 +752,9 @@ def _ingest_articles_into_buckets(
         seen_urls.add(url)
         by_source[source_name].append(
             {
+                "source_id": source_id,
                 "source": source_name,
+                "credibility_score": credibility,
                 "url": url,
                 "title": title,
                 "description": description,
@@ -829,10 +784,10 @@ async def _fetch_everything_for_source_ids(
     client: httpx.AsyncClient,
     *,
     q: str,
-    source_ids: list[str],
+    source_ids: list[str] | None,
     headers: dict[str, str],
 ) -> list[dict[str, Any]]:
-    if not source_ids or not q:
+    if not q:
         return []
     base_params: dict[str, Any] = {
         "q": q,
@@ -840,13 +795,19 @@ async def _fetch_everything_for_source_ids(
         "sortBy": "relevancy",
         "pageSize": NEWSAPI_PAGE_SIZE,
     }
-    chunks = [
-        source_ids[i : i + NEWSAPI_MAX_SOURCES_PER_REQUEST]
-        for i in range(0, len(source_ids), NEWSAPI_MAX_SOURCES_PER_REQUEST)
-    ]
+    chunks: list[list[str] | None]
+    if source_ids:
+        chunks = [
+            source_ids[i : i + NEWSAPI_MAX_SOURCES_PER_REQUEST]
+            for i in range(0, len(source_ids), NEWSAPI_MAX_SOURCES_PER_REQUEST)
+        ]
+    else:
+        chunks = [None]
 
-    async def one_chunk(chunk: list[str]) -> list[dict[str, Any]]:
-        params = {**base_params, "sources": ",".join(chunk)}
+    async def one_chunk(chunk: list[str] | None) -> list[dict[str, Any]]:
+        params = dict(base_params)
+        if chunk:
+            params["sources"] = ",".join(chunk)
         r = await client.get(NEWSAPI_EVERYTHING, params=params, headers=headers)
         r.raise_for_status()
         payload = r.json()
@@ -894,16 +855,18 @@ def _get_recent_cached_articles(topic: str, db: Session) -> list[Article]:
 
 
 def compute_selected_outlets_from_db(topic: str, db: Session) -> list[str]:
-    """Top approved sources by relevant article count for this topic, max TOP_OUTLET_SLOTS."""
+    """Top credible sources by relevant article count for this topic, max TOP_OUTLET_SLOTS."""
     rows = db.execute(
         select(Article.source, func.count(Article.id))
         .where(Article.topic == topic, Article.relevance_score >= MIN_RELEVANCE_SCORE)
         .group_by(Article.source)
     ).all()
+    source_id_by_display = {display: sid for sid, display in SOURCE_DISPLAY_NAMES.items()}
     eligible = [
         (s, int(c))
         for s, c in rows
-        if c >= MIN_ARTICLES_PER_SOURCE and s in ALLOWED_OUTLET_DISPLAY_NAMES
+        if c >= MIN_ARTICLES_PER_SOURCE
+        and get_credibility_score(source_id_by_display.get(str(s), "")) >= MIN_CREDIBILITY
     ]
     eligible.sort(key=lambda x: (-x[1], OUTLET_DISPLAY_RANK.get(x[0], 999)))
     return [s for s, _ in eligible[:TOP_OUTLET_SLOTS]]
@@ -921,17 +884,12 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         raise NewsFetcherError("Topic must not be empty.")
 
     source_categories = detect_source_categories_for_query(topic)
-    narrow_pool_ids = source_ids_for_categories(source_categories)
-    full_pool_ids = source_ids_for_categories(list(VETTED_SOURCES_BY_CATEGORY.keys()))
     relaxed_q = relax_search_query(topic)
-    q_for_full = relaxed_q if relaxed_q else topic
-
     attempt_specs: list[tuple[list[str], str, list[str]]] = [
-        (narrow_pool_ids, topic, source_categories),
+        ([], topic, source_categories),
     ]
     if relaxed_q != topic:
-        attempt_specs.append((narrow_pool_ids, relaxed_q, source_categories))
-    attempt_specs.append((full_pool_ids, q_for_full, list(CATEGORY_ORDER)))
+        attempt_specs.append(([], relaxed_q, source_categories))
     fetch_attempts = _unique_fetch_attempts(attempt_specs)
 
     cached_articles = _get_recent_cached_articles(topic, db)
@@ -967,7 +925,6 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
                     continue
                 by_source.clear()
                 seen_urls.clear()
-                pool_set = frozenset(pool_ids)
                 articles = await _fetch_everything_for_source_ids(
                     client, q=q, source_ids=pool_ids, headers=headers
                 )
@@ -975,12 +932,10 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
                     articles,
                     by_source,
                     seen_urls,
-                    allowed_source_ids=pool_set,
-                    source_id_to_display=SOURCE_DISPLAY_NAMES,
                 )
                 total_in_pool = sum(len(v) for v in by_source.values())
                 _log_source_article_counts(
-                    f"everything vetted ingested={n1} total={total_in_pool} q={q!r} pool={pool_cats}",
+                    f"everything credibility-filtered ingested={n1} total={total_in_pool} q={q!r} pool={pool_cats}",
                     by_source,
                 )
                 final_source_pool = pool_cats

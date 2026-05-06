@@ -31,6 +31,7 @@ _extra_cors = [
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
+from .credibility_scores import get_credibility_score
 from .database import Article, ArticleScore, TopicAnalysis, create_tables, get_db, normalize_topic
 from .framing_extract import clean_text, get_framing_summary
 from .llm_analyzer import LLMAnalyzer
@@ -40,6 +41,7 @@ from .news_fetcher import (
     compute_selected_outlets_from_db,
     detect_source_categories_for_query,
     fetch_and_store_articles,
+    SOURCE_DISPLAY_NAMES,
 )
 
 DEFAULT_TOPIC_TREND_DAYS = 7
@@ -144,6 +146,7 @@ def _build_outlet_scores(
     ordered_sources: list[str],
     framing_by_source: dict[str, str],
 ) -> dict:
+    source_id_by_display = {display: sid for sid, display in SOURCE_DISPLAY_NAMES.items()}
     rows = db.execute(
         select(
             Article.id,
@@ -185,6 +188,7 @@ def _build_outlet_scores(
         active_rows = preferred if preferred else source_rows
         out = {
             "source": source,
+            "credibility_score": get_credibility_score(source_id_by_display.get(source, "")),
             "article_count": 0,
             "avg_sentiment_score": 0.0,
             "avg_bias_score": 0.0,
@@ -208,6 +212,7 @@ def _build_outlet_scores(
             outlets.append(
                 {
                     "source": source,
+                    "credibility_score": get_credibility_score(source_id_by_display.get(source, "")),
                     "article_count": 0,
                     "avg_sentiment_score": None,
                     "avg_bias_score": None,
