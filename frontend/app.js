@@ -101,6 +101,13 @@ const CHART_MARGIN_LINE_AREA = { top: 8, right: 16, bottom: 64, left: 16 };
 const CHART_MARGIN_SENTIMENT = { top: 8, right: 16, bottom: 80, left: 16 };
 
 const CHART_LEGEND_WRAPPER = { paddingTop: "20px", fontSize: "12px" };
+const TIMELINE_LEGEND_WRAPPER = {
+  ...CHART_LEGEND_WRAPPER,
+  maxWidth: "100%",
+  overflow: "hidden",
+  whiteSpace: "nowrap",
+  textOverflow: "ellipsis",
+};
 
 const CHART_FIXED_HEIGHT = 400;
 const CHART_MIN_HEIGHT = 350;
@@ -1485,20 +1492,6 @@ function Timeline({ timeline, outlets, outletColorMap }) {
   }, [rows, outlets]);
   const timelineEmpty = useMemo(() => isTimelineBiasDatasetEmpty(rows, outlets), [rows, outlets]);
   const partialMeta = useMemo(() => getChartHistoryPartialMeta(rows, outlets, "timeline"), [rows, outlets]);
-  const timelineRows = useMemo(
-    () =>
-      rows.map((row) => {
-        const copy = { ...row };
-        for (const source of lineSources) {
-          const val = row?.[source];
-          const estimated = row?.[`${source}__estimated`] === true;
-          copy[`${source}__real`] = !estimated ? val : null;
-          copy[`${source}__estimated_only`] = estimated ? val : null;
-        }
-        return copy;
-      }),
-    [rows, lineSources]
-  );
   const onlyEstimatedVisible = useMemo(() => {
     let sawEstimated = false;
     let sawReal = false;
@@ -1553,7 +1546,7 @@ function Timeline({ timeline, outlets, outletColorMap }) {
           </div>
         ) : null}
         <ResponsiveContainer width="100%" height="100%" minHeight={CHART_MIN_HEIGHT}>
-          <LineChart data={timelineRows} margin={CHART_MARGIN_LINE_AREA}>
+          <LineChart data={rows} margin={CHART_MARGIN_LINE_AREA}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="date"
@@ -1573,42 +1566,20 @@ function Timeline({ timeline, outlets, outletColorMap }) {
               verticalAlign="bottom"
               align="center"
               layout="horizontal"
-              wrapperStyle={CHART_LEGEND_WRAPPER}
+              wrapperStyle={TIMELINE_LEGEND_WRAPPER}
             />
             {lineSources.map((source) => (
-              <React.Fragment key={source}>
-                <Line
-                  type="monotone"
-                  dataKey={source}
-                  name={source}
-                  stroke={outletColorFromMap(outletColorMap, source)}
-                  strokeWidth={1.8}
-                  strokeOpacity={0.28}
-                  dot={false}
-                  connectNulls
-                  legendType="none"
-                />
-                <Line
-                  type="monotone"
-                  dataKey={`${source}__estimated_only`}
-                  name={source}
-                  stroke={outletColorFromMap(outletColorMap, source)}
-                  strokeWidth={2.2}
-                  strokeDasharray="5 4"
-                  dot={{ r: 2.5 }}
-                  connectNulls
-                  legendType="none"
-                />
-                <Line
-                  type="monotone"
-                  dataKey={`${source}__real`}
-                  name={source}
-                  stroke={outletColorFromMap(outletColorMap, source)}
-                  strokeWidth={2.4}
-                  dot={{ r: 3 }}
-                  connectNulls
-                />
-              </React.Fragment>
+              <Line
+                key={source}
+                type="monotone"
+                dataKey={source}
+                name={source}
+                stroke={outletColorFromMap(outletColorMap, source)}
+                strokeWidth={2.3}
+                dot={{ r: 3 }}
+                connectNulls
+                legendType="circle"
+              />
             ))}
           </LineChart>
         </ResponsiveContainer>

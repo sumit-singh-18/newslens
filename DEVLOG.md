@@ -676,3 +676,11 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 - **`backend/main.py`**: Updated `/analyze` scoring payload so **`scoring.article_count`** (used by "Positions based on N articles analyzed") is derived from a strict count query at **`relevance_score >= 50`**.
 - **`backend/main.py`**: Updated **`_build_outlet_scores`** aggregation logic to prefer only outlet rows with **`relevance_score >= 50`** for bias/sentiment averages and label distributions, with automatic fallback to all outlet rows (still above `MIN_RELEVANCE_SCORE`) when an outlet has zero strict rows.
 - **Verification**: **`npm run build`** in **`frontend/`** succeeds.
+
+## [2026-05-05] - Timeline legend dedupe: one line per outlet
+
+### What changed
+- **`frontend/app.js`**: Simplified **`Timeline`** rendering to exactly one Recharts **`<Line>`** per outlet (`dataKey={source}`), removing duplicate helper line series that caused each outlet to appear multiple times in the legend.
+- **`frontend/app.js`**: Set **`legendType="circle"`** on each outlet line so legend markers are consistent and explicit.
+- **`frontend/app.js`**: Added timeline-specific legend wrapper constraints (`maxWidth`, overflow handling) to reduce legend overflow/crowding.
+- **Verification**: **`npm run build`** in **`frontend/`** succeeds.
