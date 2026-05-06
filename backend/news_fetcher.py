@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from sqlalchemy import delete, exists, func, select
 from sqlalchemy.orm import Session
 
-from .credibility_scores import MIN_CREDIBILITY, get_credibility_score
+from .credibility_engine import MIN_CREDIBILITY_SCORE, compute_credibility_score, is_credible
 from .database import Article, ArticleScore, TopicOutletFraming, normalize_topic
 from .framing_extract import clean_text
 from .nlp_pipeline import NLPPipeline
@@ -188,15 +188,7 @@ _FILLER_TOKENS = frozenset(
 )
 
 
-ALL_CREDIBLE_SOURCE_IDS_RANKED: tuple[str, ...] = tuple(
-    sorted(
-        (sid for sid in SOURCE_DISPLAY_NAMES.keys() if get_credibility_score(sid) >= MIN_CREDIBILITY),
-        key=lambda sid: (-get_credibility_score(sid), sid),
-    )
-)
-OUTLET_DISPLAY_RANK: dict[str, int] = {
-    SOURCE_DISPLAY_NAMES[sid]: i for i, sid in enumerate(ALL_CREDIBLE_SOURCE_IDS_RANKED)
-}
+OUTLET_DISPLAY_RANK: dict[str, int] = {}
 
 TOP_OUTLET_SLOTS = 5
 MIN_ARTICLES_PER_SOURCE = 1
@@ -212,12 +204,13 @@ class NewsFetcherError(Exception):
 
 def detect_source_categories_for_query(query: str) -> list[str]:
     _ = query
-    return [f"credibility>={MIN_CREDIBILITY}"]
+    # We fetch without a NewsAPI `sources` filter; credibility is applied post-fetch.
+    return [f"credibility>={MIN_CREDIBILITY_SCORE}"]
 
 
 def source_ids_for_categories(categories: list[str]) -> list[str]:
     _ = categories
-    return list(ALL_CREDIBLE_SOURCE_IDS_RANKED)
+    return []
 
 
 def relax_search_query(topic: str) -> str:
@@ -718,7 +711,7 @@ def _log_source_article_counts(stage: str, by_source: dict[str, list[Any]]) -> N
 
 def _qualifying_source_names(by_source: dict[str, list[Any]], min_art: int) -> list[str]:
     eligible = [s for s, items in by_source.items() if len(items) >= min_art]
-    eligible.sort(key=lambda s: (-len(by_source[s]), OUTLET_DISPLAY_RANK.get(s, 999)))
+    eligible.sort(key=lambda s: (-len(by_source[s]), str(s).lower()))
     return eligible
 
 
@@ -730,12 +723,10 @@ def _ingest_articles_into_buckets(
     added = 0
     for item in incoming_articles:
         src_obj = item.get("source") or {}
+        if not is_credible(src_obj):
+            continue
+        credibility = compute_credibility_score(src_obj)
         source_id = (src_obj.get("id") or "").strip()
-        if not source_id:
-            continue
-        credibility = get_credibility_score(source_id)
-        if credibility < MIN_CREDIBILITY:
-            continue
         source_name = SOURCE_DISPLAY_NAMES.get(source_id) or (src_obj.get("name") or "").strip()
         if not source_name:
             continue
@@ -855,20 +846,16 @@ def _get_recent_cached_articles(topic: str, db: Session) -> list[Article]:
 
 
 def compute_selected_outlets_from_db(topic: str, db: Session) -> list[str]:
-    """Top credible sources by relevant article count for this topic, max TOP_OUTLET_SLOTS."""
+    """Top sources by relevant article count for this topic, max TOP_OUTLET_SLOTS."""
     rows = db.execute(
         select(Article.source, func.count(Article.id))
         .where(Article.topic == topic, Article.relevance_score >= MIN_RELEVANCE_SCORE)
         .group_by(Article.source)
     ).all()
-    source_id_by_display = {display: sid for sid, display in SOURCE_DISPLAY_NAMES.items()}
     eligible = [
-        (s, int(c))
-        for s, c in rows
-        if c >= MIN_ARTICLES_PER_SOURCE
-        and get_credibility_score(source_id_by_display.get(str(s), "")) >= MIN_CREDIBILITY
+        (s, int(c)) for s, c in rows if c >= MIN_ARTICLES_PER_SOURCE
     ]
-    eligible.sort(key=lambda x: (-x[1], OUTLET_DISPLAY_RANK.get(x[0], 999)))
+    eligible.sort(key=lambda x: (-x[1], str(x[0]).lower()))
     return [s for s, _ in eligible[:TOP_OUTLET_SLOTS]]
 
 
@@ -1026,6 +1013,14 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         )
         db.add(article)
         db.flush()
+
+        # Persist per-article outlet credibility so the analyze endpoint can surface an
+        # outlet-level indicator without requiring additional NewsAPI calls.
+        raw_scores = analysis.get("raw_scores") or {}
+        if raw_row.get("credibility_score") != null:
+            raw_scores["credibility_score"] = float(raw_row["credibility_score"])
+        analysis["raw_scores"] = raw_scores
+
         db.add(
             ArticleScore(
                 article_id=article.id,

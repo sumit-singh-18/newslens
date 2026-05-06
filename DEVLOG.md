@@ -707,3 +707,16 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 - Fetch sanity check:
   - Topic **`artificial intelligence`** selected outlets: `['CBS News', 'Fox News']` (none of National Geographic/New Scientist/Newsweek/Wired present).
   - Topic **`trade war`** selected outlets: `['Al Jazeera English', 'CNN', 'Politico']` (none of National Geographic/New Scientist/Newsweek/Wired present).
+
+## [2026-05-05] - Dynamic credibility engine replaces hardcoded outlet scores
+
+### What changed
+- **`backend/credibility_engine.py`**: Added dynamic credibility scoring from NewsAPI `article["source"]` metadata (verified ID, HTTPS, credible TLD, domain-length proxy, description quality, and `language == "en"`). Credible threshold is `MIN_CREDIBILITY_SCORE = 60`.
+- **Deleted** **`backend/credibility_scores.py`**.
+- **`backend/news_fetcher.py`**: Removed all references to the deleted static credibility module. During ingestion, each fetched article is filtered via `is_credible(article["source"])`. Only articles from credible sources are persisted; the existing top-5-by-article-count selection and “limited credible coverage” behavior remain.
+- **`backend/news_fetcher.py`**: Persists each article’s computed `credibility_score` into `ArticleScore.raw_scores`.
+- **`backend/main.py`**: Aggregates the persisted per-article credibility values into an outlet-level `credibility_score`.
+- **`npm run build`** in **`frontend/`**: success.
+
+### Notes
+- Frontend credibility indicator maps the new 0–100 score range into the same “High/Credible/Generally credible” buckets.

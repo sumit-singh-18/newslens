@@ -31,7 +31,6 @@ _extra_cors = [
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
-from .credibility_scores import get_credibility_score
 from .database import Article, ArticleScore, TopicAnalysis, create_tables, get_db, normalize_topic
 from .framing_extract import clean_text, get_framing_summary
 from .llm_analyzer import LLMAnalyzer
@@ -41,7 +40,6 @@ from .news_fetcher import (
     compute_selected_outlets_from_db,
     detect_source_categories_for_query,
     fetch_and_store_articles,
-    SOURCE_DISPLAY_NAMES,
 )
 
 DEFAULT_TOPIC_TREND_DAYS = 7
@@ -146,7 +144,6 @@ def _build_outlet_scores(
     ordered_sources: list[str],
     framing_by_source: dict[str, str],
 ) -> dict:
-    source_id_by_display = {display: sid for sid, display in SOURCE_DISPLAY_NAMES.items()}
     rows = db.execute(
         select(
             Article.id,
@@ -156,6 +153,7 @@ def _build_outlet_scores(
             ArticleScore.sentiment_label,
             ArticleScore.bias_score,
             ArticleScore.bias_label,
+            ArticleScore.raw_scores,
             ArticleScore.created_at,
         )
         .join(ArticleScore, ArticleScore.article_id == Article.id)
@@ -167,6 +165,13 @@ def _build_outlet_scores(
     for row in rows:
         if row.id in latest_by_article:
             continue
+        credibility_score = None
+        try:
+            raw_scores = row.raw_scores or {}
+            c = raw_scores.get("credibility_score")
+            credibility_score = float(c) if c != null else None
+        except Exception:
+            credibility_score = None
         latest_by_article[row.id] = {
             "source": row.source,
             "relevance_score": float(row.relevance_score or 0.0),
@@ -174,6 +179,7 @@ def _build_outlet_scores(
             "sentiment_label": row.sentiment_label,
             "bias_score": row.bias_score,
             "bias_label": row.bias_label,
+            "credibility_score": credibility_score,
         }
 
     rows_by_source: dict[str, list[dict]] = defaultdict(list)
@@ -188,21 +194,28 @@ def _build_outlet_scores(
         active_rows = preferred if preferred else source_rows
         out = {
             "source": source,
-            "credibility_score": get_credibility_score(source_id_by_display.get(source, "")),
+            "credibility_score": None,
             "article_count": 0,
             "avg_sentiment_score": 0.0,
             "avg_bias_score": 0.0,
             "sentiment_labels": {},
             "bias_labels": {},
         }
+        cred_sum = 0.0
+        cred_count = 0
         for item in active_rows:
             out["article_count"] += 1
             out["avg_sentiment_score"] += float(item["sentiment_score"] or 0.0)
             out["avg_bias_score"] += float(item["bias_score"] or 0.0)
+            if item.get("credibility_score") != null:
+                cred_sum += float(item["credibility_score"])
+                cred_count += 1
             sentiment_label = item["sentiment_label"] or "Unknown"
             bias_label = item["bias_label"] or "Unknown"
             out["sentiment_labels"][sentiment_label] = out["sentiment_labels"].get(sentiment_label, 0) + 1
             out["bias_labels"][bias_label] = out["bias_labels"].get(bias_label, 0) + 1
+        if cred_count > 0:
+            out["credibility_score"] = round(cred_sum / cred_count, 2)
         return out
 
     outlets = []
@@ -212,7 +225,7 @@ def _build_outlet_scores(
             outlets.append(
                 {
                     "source": source,
-                    "credibility_score": get_credibility_score(source_id_by_display.get(source, "")),
+                    "credibility_score": None,
                     "article_count": 0,
                     "avg_sentiment_score": None,
                     "avg_bias_score": None,

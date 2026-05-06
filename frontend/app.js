@@ -585,9 +585,10 @@ function normalizeOutlet(o) {
 function credibilityIndicator(score) {
   const s = typeof score === "number" && Number.isFinite(score) ? score : null;
   if (s == null) return { label: "Credibility unrated", color: "#94a3b8" };
-  if (s >= 9) return { label: "⬤ High credibility", color: "#16a34a" };
-  if (s >= 7) return { label: "⬤ Credible", color: "#2563eb" };
-  if (s >= 6) return { label: "⬤ Generally credible", color: "#6b7280" };
+  // credibility_engine returns 0-100.
+  if (s >= 90) return { label: "⬤ High credibility", color: "#16a34a" };
+  if (s >= 70) return { label: "⬤ Credible", color: "#2563eb" };
+  if (s >= 60) return { label: "⬤ Generally credible", color: "#6b7280" };
   return { label: "Credibility below threshold", color: "#ef4444" };
 }
 
