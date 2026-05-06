@@ -52944,10 +52944,12 @@ function normalizeAnalyzePayload(raw) {
     ...maBlock,
     analysis_status: maBlock.analysis_status ?? rootAnalysisStatus
   };
+  const outletColorMap = buildOutletColorMap(outlets);
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
     status: normalizeCoverageStatus(d.status),
     outlets,
+    outletColorMap,
     timeline: normalizeTimeline(d.timeline),
     missing_angle,
     fetch: fetch2,
@@ -52970,13 +52972,41 @@ function sentimentBucket(labels, keys2) {
   }
   return 0;
 }
-var OUTLET_COLORS = {
-  CNN: "#3B82F6",
-  Reuters: "#9CA3AF",
-  "Fox News": "#EF4444",
-  "BBC News": "#0EA5E9",
-  "Associated Press": "#64748B"
-};
+var COLOR_PALETTE = [
+  "#3B82F6",
+  "#EF4444",
+  "#10B981",
+  "#F59E0B",
+  "#8B5CF6",
+  "#EC4899",
+  "#06B6D4",
+  "#F97316",
+  "#84CC16",
+  "#6366F1",
+  "#14B8A6",
+  "#F43F5E",
+  "#A855F7",
+  "#0EA5E9",
+  "#78716C"
+];
+function buildOutletColorMap(outlets) {
+  const list = Array.isArray(outlets) ? outlets : [];
+  const map3 = {};
+  let i = 0;
+  for (const o of list) {
+    if (!o || typeof o !== "object") continue;
+    const name = o.source;
+    if (!name || Object.prototype.hasOwnProperty.call(map3, name)) continue;
+    map3[name] = COLOR_PALETTE[i % COLOR_PALETTE.length];
+    i += 1;
+  }
+  return map3;
+}
+function outletColorFromMap(outletColorMap, source) {
+  const m = outletColorMap && typeof outletColorMap === "object" ? outletColorMap : {};
+  const c2 = m[source];
+  return typeof c2 === "string" && c2 ? c2 : "#111827";
+}
 function biasSpectrumBucket(label) {
   const s2 = String(label ?? "").trim().toLowerCase();
   if (!s2) return "center";
@@ -53103,12 +53133,6 @@ function spectrumMarkerLabel(name) {
   const s2 = String(name || "");
   return s2.length > 10 ? s2.slice(0, 10) : s2;
 }
-function outletMarkerColor(outlet) {
-  const bucket = biasSpectrumBucket(outlet.dominant_bias_label);
-  if (bucket === "left") return "#3B82F6";
-  if (bucket === "right") return "#EF4444";
-  return "#6B7280";
-}
 function emotionalIntensity(sentimentScore) {
   if (typeof sentimentScore !== "number") return "N/A";
   return Math.min(10, Math.abs(sentimentScore) * 10).toFixed(1);
@@ -53184,7 +53208,7 @@ function extremOutlets(outlets) {
 function LoadingSkeleton() {
   return /* @__PURE__ */ import_react36.default.createElement("section", { className: "skeleton-grid" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card tall" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card" }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "card skeleton-card wide" }));
 }
-function BiasSpectrum({ outlets, articlesAnalyzed, spectrumExtremes, isFetching }) {
+function BiasSpectrum({ outlets, outletColorMap, articlesAnalyzed, spectrumExtremes, isFetching }) {
   const list = Array.isArray(outlets) ? outlets : [];
   const widths = (0, import_react36.useMemo)(() => spectrumSegmentWidths(list), [list]);
   const extremes = (0, import_react36.useMemo)(() => {
@@ -53276,7 +53300,7 @@ function BiasSpectrum({ outlets, articlesAnalyzed, spectrumExtremes, isFetching 
           "span",
           {
             className: "spectrum-marker-dot",
-            style: { background: outletMarkerColor(outlet) }
+            style: { background: outletColorFromMap(outletColorMap, outlet.source) }
           }
         ),
         /* @__PURE__ */ import_react36.default.createElement("span", { className: "spectrum-marker-name" }, spectrumMarkerLabel(outlet.source))
@@ -53335,7 +53359,7 @@ var OUTLET_METHODOLOGY = {
   "NBC News": "Broadcast newsroom focused on national headlines, breaking events, and explanatory segments.",
   "The Guardian": "International reporting with an explanatory style and strong editorial voice."
 };
-function SourceProfileSection({ outletName }) {
+function SourceProfileSection({ outletName, sparklineColor }) {
   const [open, setOpen] = (0, import_react36.useState)(false);
   const q = useQuery({
     queryKey: ["outlet-profile", outletName],
@@ -53354,13 +53378,30 @@ function SourceProfileSection({ outletName }) {
     },
     /* @__PURE__ */ import_react36.default.createElement("span", { className: "source-profile-toggle-left" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "source-profile-info-icon", "aria-hidden": true }, "i"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Source Profile")),
     /* @__PURE__ */ import_react36.default.createElement("span", { className: "chevron", "aria-hidden": true }, open ? "\u25BC" : "\u25B6")
-  ), /* @__PURE__ */ import_react36.default.createElement("div", { className: `source-profile-body${open ? " open" : ""}` }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "source-profile-methodology" }, methodology), open ? /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, null, q.isLoading ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted" }, "Loading historical stats\u2026") : null, q.isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-error" }, "Could not load profile: ", q.error?.message || "Error") : null, q.data ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "source-profile-inner" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pills" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pill" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Avg bias"), /* @__PURE__ */ import_react36.default.createElement("strong", null, q.data.avg_bias_score != null ? q.data.avg_bias_score.toFixed(3) : "\u2014")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pill" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Avg sentiment"), /* @__PURE__ */ import_react36.default.createElement("strong", null, q.data.avg_sentiment_score != null ? q.data.avg_sentiment_score.toFixed(3) : "\u2014")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pill" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Articles (all topics)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, q.data.article_count ?? 0))), q.data.series?.length ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "sparkline-row" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "micro-muted" }, "Bias (daily, ", DEFAULT_SERIES_LABEL, ")"), /* @__PURE__ */ import_react36.default.createElement(SparklineSeries, { series: q.data.series, color: OUTLET_COLORS[outletName] || "#111827" })) : null) : null) : null));
+  ), /* @__PURE__ */ import_react36.default.createElement("div", { className: `source-profile-body${open ? " open" : ""}` }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "source-profile-methodology" }, methodology), open ? /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, null, q.isLoading ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted" }, "Loading historical stats\u2026") : null, q.isError ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-error" }, "Could not load profile: ", q.error?.message || "Error") : null, q.data ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "source-profile-inner" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pills" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pill" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Avg bias"), /* @__PURE__ */ import_react36.default.createElement("strong", null, q.data.avg_bias_score != null ? q.data.avg_bias_score.toFixed(3) : "\u2014")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pill" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Avg sentiment"), /* @__PURE__ */ import_react36.default.createElement("strong", null, q.data.avg_sentiment_score != null ? q.data.avg_sentiment_score.toFixed(3) : "\u2014")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "stat-pill" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Articles (all topics)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, q.data.article_count ?? 0))), q.data.series?.length ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "sparkline-row" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "micro-muted" }, "Bias (daily, ", DEFAULT_SERIES_LABEL, ")"), /* @__PURE__ */ import_react36.default.createElement(SparklineSeries, { series: q.data.series, color: sparklineColor || "#111827" })) : null) : null) : null));
 }
-function OutletCard({ outlet, compareSelected, onCompareClick }) {
+function OutletCard({ outlet, outletColorMap, compareSelected, onCompareClick }) {
   const selectedClass = compareSelected ? "outlet-card-selected" : "";
-  return /* @__PURE__ */ import_react36.default.createElement("article", { className: `card outlet-card ${selectedClass}` }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-badges" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: biasBadgeClass(outlet.dominant_bias_label) }, outlet.dominant_bias_label || "No bias label"), /* @__PURE__ */ import_react36.default.createElement("p", { className: sentimentBadgeClass(outlet.dominant_sentiment_label) }, outlet.dominant_sentiment_label || "Neutral")), outlet.framing_summary ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "body" }, outlet.framing_summary) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof outlet.avg_sentiment_score === "number" ? outlet.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity (0-10)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(outlet.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement(SourceProfileSection, { outletName: outlet.source }));
+  const accent = outletColorFromMap(outletColorMap, outlet.source);
+  return /* @__PURE__ */ import_react36.default.createElement(
+    "article",
+    {
+      className: `card outlet-card ${selectedClass}`,
+      style: {
+        borderLeftWidth: "4px",
+        borderLeftStyle: "solid",
+        borderLeftColor: accent
+      }
+    },
+    /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")),
+    /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-badges" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: biasBadgeClass(outlet.dominant_bias_label) }, outlet.dominant_bias_label || "No bias label"), /* @__PURE__ */ import_react36.default.createElement("p", { className: sentimentBadgeClass(outlet.dominant_sentiment_label) }, outlet.dominant_sentiment_label || "Neutral")),
+    outlet.framing_summary ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "body" }, outlet.framing_summary) : null,
+    /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof outlet.avg_sentiment_score === "number" ? outlet.avg_sentiment_score.toFixed(3) : "N/A")),
+    /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity (0-10)"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(outlet.avg_sentiment_score))),
+    /* @__PURE__ */ import_react36.default.createElement(SourceProfileSection, { outletName: outlet.source, sparklineColor: accent })
+  );
 }
-function OutletGrid({ outlets, compareSelection, onCompareClick }) {
+function OutletGrid({ outlets, outletColorMap, compareSelection, onCompareClick }) {
   const selectedSet = new Set(compareSelection);
   const list = Array.isArray(outlets) ? outlets : [];
   return /* @__PURE__ */ import_react36.default.createElement("section", { id: "outlets", className: "outlets-grid" }, list.map((outlet) => /* @__PURE__ */ import_react36.default.createElement(
@@ -53368,6 +53409,7 @@ function OutletGrid({ outlets, compareSelection, onCompareClick }) {
     {
       key: outlet.source,
       outlet,
+      outletColorMap,
       compareSelected: selectedSet.has(outlet.source),
       onCompareClick
     }
@@ -53455,7 +53497,7 @@ function SentimentDistribution({ outlets }) {
     )
   ))));
 }
-function Timeline({ timeline, outlets }) {
+function Timeline({ timeline, outlets, outletColorMap }) {
   const rows = Array.isArray(timeline) ? timeline : [];
   const lineSources = (0, import_react36.useMemo)(() => {
     const sources = (outlets || []).filter((o) => (o.article_count || 0) > 0).map((o) => o.source);
@@ -53494,14 +53536,14 @@ function Timeline({ timeline, outlets }) {
       key: source,
       type: "monotone",
       dataKey: source,
-      stroke: OUTLET_COLORS[source] || "#111827",
+      stroke: outletColorFromMap(outletColorMap, source),
       strokeWidth: 2.2,
       dot: { r: 3 },
       connectNulls: true
     }
   ))))), partialMeta.show ? /* @__PURE__ */ import_react36.default.createElement(ChartHistoryPartialHint, { x: partialMeta.x }) : null);
 }
-function TopicTrendChart({ topic, outlets }) {
+function TopicTrendChart({ topic, outlets, outletColorMap }) {
   const q = useQuery({
     queryKey: ["topic-trend", topic, 7],
     queryFn: () => fetchTopicTrend(topic, 7),
@@ -53551,8 +53593,8 @@ function TopicTrendChart({ topic, outlets }) {
       type: "monotone",
       dataKey: source,
       stackId: "topic-volume",
-      stroke: OUTLET_COLORS[source] || "#111827",
-      fill: OUTLET_COLORS[source] || "#111827",
+      stroke: outletColorFromMap(outletColorMap, source),
+      fill: outletColorFromMap(outletColorMap, source),
       fillOpacity: 0.55
     }
   ))))), partialMeta.show ? /* @__PURE__ */ import_react36.default.createElement(ChartHistoryPartialHint, { x: partialMeta.x }) : null) : null);
@@ -53798,6 +53840,7 @@ function AnalysisResults({
   onSearchTopic
 }) {
   const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
+  const outletColorMap = data?.outletColorMap && typeof data.outletColorMap === "object" ? data.outletColorMap : {};
   const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
   const comparing = compareSelection.length === 2;
   const coverageShortfall = outlets.length === 0 && data?.coverage_message ? String(data.coverage_message) : "";
@@ -53828,6 +53871,7 @@ function AnalysisResults({
     BiasSpectrum,
     {
       outlets,
+      outletColorMap,
       articlesAnalyzed: data.scoring && typeof data.scoring.article_count === "number" ? data.scoring.article_count : null,
       spectrumExtremes: {
         most_left_outlet: data.most_left_outlet,
@@ -53835,7 +53879,15 @@ function AnalysisResults({
       },
       isFetching: spectrumFetching
     }
-  ), /* @__PURE__ */ import_react36.default.createElement(OutletGrid, { outlets, compareSelection, onCompareClick }), /* @__PURE__ */ import_react36.default.createElement(HeadlineComparison, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-grid" }, /* @__PURE__ */ import_react36.default.createElement(SentimentDistribution, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "timeline-column" }, /* @__PURE__ */ import_react36.default.createElement(Timeline, { timeline, outlets }), /* @__PURE__ */ import_react36.default.createElement(TopicTrendChart, { topic: data.topic || "", outlets }))), /* @__PURE__ */ import_react36.default.createElement(MissingAngleCard, { missingAngle: data.missing_angle })) : null);
+  ), /* @__PURE__ */ import_react36.default.createElement(
+    OutletGrid,
+    {
+      outlets,
+      outletColorMap,
+      compareSelection,
+      onCompareClick
+    }
+  ), /* @__PURE__ */ import_react36.default.createElement(HeadlineComparison, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-grid" }, /* @__PURE__ */ import_react36.default.createElement(SentimentDistribution, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "timeline-column" }, /* @__PURE__ */ import_react36.default.createElement(Timeline, { timeline, outlets, outletColorMap }), /* @__PURE__ */ import_react36.default.createElement(TopicTrendChart, { topic: data.topic || "", outlets, outletColorMap }))), /* @__PURE__ */ import_react36.default.createElement(MissingAngleCard, { missingAngle: data.missing_angle })) : null);
 }
 function Hero({
   searchInput,
