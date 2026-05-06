@@ -632,10 +632,12 @@ function normalizeAnalyzePayload(raw) {
     ...maBlock,
     analysis_status: maBlock.analysis_status ?? rootAnalysisStatus,
   };
+  const outletColorMap = buildOutletColorMap(outlets);
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
     status: normalizeCoverageStatus(d.status),
     outlets,
+    outletColorMap,
     timeline: normalizeTimeline(d.timeline),
     missing_angle,
     fetch,
@@ -665,13 +667,44 @@ function sentimentBucket(labels, keys) {
   return 0;
 }
 
-const OUTLET_COLORS = {
-  CNN: "#3B82F6",
-  Reuters: "#9CA3AF",
-  "Fox News": "#EF4444",
-  "BBC News": "#0EA5E9",
-  "Associated Press": "#64748B",
-};
+const COLOR_PALETTE = [
+  "#3B82F6",
+  "#EF4444",
+  "#10B981",
+  "#F59E0B",
+  "#8B5CF6",
+  "#EC4899",
+  "#06B6D4",
+  "#F97316",
+  "#84CC16",
+  "#6366F1",
+  "#14B8A6",
+  "#F43F5E",
+  "#A855F7",
+  "#0EA5E9",
+  "#78716C",
+];
+
+/** Per-session outlet → color from fixed palette, in API outlet order (first outlet → palette[0]). */
+function buildOutletColorMap(outlets) {
+  const list = Array.isArray(outlets) ? outlets : [];
+  const map = {};
+  let i = 0;
+  for (const o of list) {
+    if (!o || typeof o !== "object") continue;
+    const name = o.source;
+    if (!name || Object.prototype.hasOwnProperty.call(map, name)) continue;
+    map[name] = COLOR_PALETTE[i % COLOR_PALETTE.length];
+    i += 1;
+  }
+  return map;
+}
+
+function outletColorFromMap(outletColorMap, source) {
+  const m = outletColorMap && typeof outletColorMap === "object" ? outletColorMap : {};
+  const c = m[source];
+  return typeof c === "string" && c ? c : "#111827";
+}
 
 /** Align with backend bias_utils: map model labels to left / center / right buckets. */
 function biasSpectrumBucket(label) {
@@ -819,13 +852,6 @@ function spectrumMarkerLabel(name) {
   return s.length > 10 ? s.slice(0, 10) : s;
 }
 
-function outletMarkerColor(outlet) {
-  const bucket = biasSpectrumBucket(outlet.dominant_bias_label);
-  if (bucket === "left") return "#3B82F6";
-  if (bucket === "right") return "#EF4444";
-  return "#6B7280";
-}
-
 function emotionalIntensity(sentimentScore) {
   if (typeof sentimentScore !== "number") return "N/A";
   return Math.min(10, Math.abs(sentimentScore) * 10).toFixed(1);
@@ -917,7 +943,7 @@ function LoadingSkeleton() {
   );
 }
 
-function BiasSpectrum({ outlets, articlesAnalyzed, spectrumExtremes, isFetching }) {
+function BiasSpectrum({ outlets, outletColorMap, articlesAnalyzed, spectrumExtremes, isFetching }) {
   const list = Array.isArray(outlets) ? outlets : [];
   const widths = useMemo(() => spectrumSegmentWidths(list), [list]);
   const extremes = useMemo(() => {
@@ -1010,7 +1036,7 @@ function BiasSpectrum({ outlets, articlesAnalyzed, spectrumExtremes, isFetching 
             >
               <span
                 className="spectrum-marker-dot"
-                style={{ background: outletMarkerColor(outlet) }}
+                style={{ background: outletColorFromMap(outletColorMap, outlet.source) }}
               />
               <span className="spectrum-marker-name">{spectrumMarkerLabel(outlet.source)}</span>
             </div>
@@ -1092,7 +1118,7 @@ const OUTLET_METHODOLOGY = {
   "The Guardian": "International reporting with an explanatory style and strong editorial voice.",
 };
 
-function SourceProfileSection({ outletName }) {
+function SourceProfileSection({ outletName, sparklineColor }) {
   const [open, setOpen] = useState(false);
   const q = useQuery({
     queryKey: ["outlet-profile", outletName],
@@ -1149,7 +1175,7 @@ function SourceProfileSection({ outletName }) {
                 {q.data.series?.length ? (
                   <div className="sparkline-row">
                     <span className="micro-muted">Bias (daily, {DEFAULT_SERIES_LABEL})</span>
-                    <SparklineSeries series={q.data.series} color={OUTLET_COLORS[outletName] || "#111827"} />
+                    <SparklineSeries series={q.data.series} color={sparklineColor || "#111827"} />
                   </div>
                 ) : null}
               </div>
@@ -1161,10 +1187,18 @@ function SourceProfileSection({ outletName }) {
   );
 }
 
-function OutletCard({ outlet, compareSelected, onCompareClick }) {
+function OutletCard({ outlet, outletColorMap, compareSelected, onCompareClick }) {
   const selectedClass = compareSelected ? "outlet-card-selected" : "";
+  const accent = outletColorFromMap(outletColorMap, outlet.source);
   return (
-    <article className={`card outlet-card ${selectedClass}`}>
+    <article
+      className={`card outlet-card ${selectedClass}`}
+      style={{
+        borderLeftWidth: "4px",
+        borderLeftStyle: "solid",
+        borderLeftColor: accent,
+      }}
+    >
       <div className="outlet-card-top">
         <h3>{outlet.source}</h3>
         <button type="button" className="btn-compare" onClick={() => onCompareClick(outlet.source)}>
@@ -1190,12 +1224,12 @@ function OutletCard({ outlet, compareSelected, onCompareClick }) {
         <span>Emotional intensity (0-10)</span>
         <strong>{emotionalIntensity(outlet.avg_sentiment_score)}</strong>
       </div>
-      <SourceProfileSection outletName={outlet.source} />
+      <SourceProfileSection outletName={outlet.source} sparklineColor={accent} />
     </article>
   );
 }
 
-function OutletGrid({ outlets, compareSelection, onCompareClick }) {
+function OutletGrid({ outlets, outletColorMap, compareSelection, onCompareClick }) {
   const selectedSet = new Set(compareSelection);
   const list = Array.isArray(outlets) ? outlets : [];
   return (
@@ -1204,6 +1238,7 @@ function OutletGrid({ outlets, compareSelection, onCompareClick }) {
         <OutletCard
           key={outlet.source}
           outlet={outlet}
+          outletColorMap={outletColorMap}
           compareSelected={selectedSet.has(outlet.source)}
           onCompareClick={onCompareClick}
         />
@@ -1388,7 +1423,7 @@ function SentimentDistribution({ outlets }) {
   );
 }
 
-function Timeline({ timeline, outlets }) {
+function Timeline({ timeline, outlets, outletColorMap }) {
   const rows = Array.isArray(timeline) ? timeline : [];
   const lineSources = useMemo(() => {
     const sources = (outlets || [])
@@ -1447,7 +1482,7 @@ function Timeline({ timeline, outlets }) {
                 key={source}
                 type="monotone"
                 dataKey={source}
-                stroke={OUTLET_COLORS[source] || "#111827"}
+                stroke={outletColorFromMap(outletColorMap, source)}
                 strokeWidth={2.2}
                 dot={{ r: 3 }}
                 connectNulls
@@ -1461,7 +1496,7 @@ function Timeline({ timeline, outlets }) {
   );
 }
 
-function TopicTrendChart({ topic, outlets }) {
+function TopicTrendChart({ topic, outlets, outletColorMap }) {
   const q = useQuery({
     queryKey: ["topic-trend", topic, 7],
     queryFn: () => fetchTopicTrend(topic, 7),
@@ -1529,8 +1564,8 @@ function TopicTrendChart({ topic, outlets }) {
                       type="monotone"
                       dataKey={source}
                       stackId="topic-volume"
-                      stroke={OUTLET_COLORS[source] || "#111827"}
-                      fill={OUTLET_COLORS[source] || "#111827"}
+                      stroke={outletColorFromMap(outletColorMap, source)}
+                      fill={outletColorFromMap(outletColorMap, source)}
                       fillOpacity={0.55}
                     />
                   ))}
@@ -1967,6 +2002,8 @@ function AnalysisResults({
   onSearchTopic,
 }) {
   const outlets = Array.isArray(data?.outlets) ? data.outlets : [];
+  const outletColorMap =
+    data?.outletColorMap && typeof data.outletColorMap === "object" ? data.outletColorMap : {};
   const timeline = Array.isArray(data?.timeline) ? data.timeline : [];
   const comparing = compareSelection.length === 2;
   const coverageShortfall =
@@ -2022,6 +2059,7 @@ function AnalysisResults({
       ) : null}
       <BiasSpectrum
         outlets={outlets}
+        outletColorMap={outletColorMap}
         articlesAnalyzed={
           data.scoring && typeof data.scoring.article_count === "number"
             ? data.scoring.article_count
@@ -2033,13 +2071,18 @@ function AnalysisResults({
         }}
         isFetching={spectrumFetching}
       />
-      <OutletGrid outlets={outlets} compareSelection={compareSelection} onCompareClick={onCompareClick} />
+      <OutletGrid
+        outlets={outlets}
+        outletColorMap={outletColorMap}
+        compareSelection={compareSelection}
+        onCompareClick={onCompareClick}
+      />
       <HeadlineComparison outlets={outlets} />
       <div className="chart-grid">
         <SentimentDistribution outlets={outlets} />
         <div className="timeline-column">
-          <Timeline timeline={timeline} outlets={outlets} />
-          <TopicTrendChart topic={data.topic || ""} outlets={outlets} />
+          <Timeline timeline={timeline} outlets={outlets} outletColorMap={outletColorMap} />
+          <TopicTrendChart topic={data.topic || ""} outlets={outlets} outletColorMap={outletColorMap} />
         </div>
       </div>
       <MissingAngleCard missingAngle={data.missing_angle} />

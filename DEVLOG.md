@@ -656,3 +656,8 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 
 ### What changed
 - **`frontend/app.js`**: **Trending topics** chips use only **`GET /trending-topics`** (removed client fallback list). **Recent searches** is a separate labeled block: **`readRecentHistoryForDisplay`** + **`normalizeRecentSearchDisplay`** (lowercase, hyphens/dots → spaces, trim, dedupe, max **5**); **`updateHistory`** persists normalized keys. **`runSearch`** uses the same normalizer for active topic. **`npm run build`**: success.
+
+## [2026-05-05] - Frontend: dynamic outlet colors from palette
+
+### What changed
+- **`frontend/app.js`**: Replaced hardcoded **`OUTLET_COLORS`** with a fixed **`COLOR_PALETTE`** of **15** accessible hex colors. **`buildOutletColorMap(outlets)`** runs inside **`normalizeAnalyzePayload`** so each **`/analyze`** response gets **`data.outletColorMap`**: outlets in API order map to **`palette[i % 15]`** (unique **`source`** names only). **`outletColorFromMap`** supplies fallbacks for missing keys. **Narrative timeline** lines, **topic coverage** stacked areas (and thus Recharts legend swatches), **bias spectrum** marker dots, **outlet cards** (4px left border), and **Source Profile** sparklines use the same map for one session-consistent palette across topic-specific outlet sets. **`npm run build`**: success.
