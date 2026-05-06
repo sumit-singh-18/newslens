@@ -52907,9 +52907,9 @@ function normalizeOutlet(o) {
 function credibilityIndicator(score) {
   const s2 = typeof score === "number" && Number.isFinite(score) ? score : null;
   if (s2 == null) return { label: "Credibility unrated", color: "#94a3b8" };
-  if (s2 >= 9) return { label: "\u2B24 High credibility", color: "#16a34a" };
-  if (s2 >= 7) return { label: "\u2B24 Credible", color: "#2563eb" };
-  if (s2 >= 6) return { label: "\u2B24 Generally credible", color: "#6b7280" };
+  if (s2 >= 90) return { label: "\u2B24 High credibility", color: "#16a34a" };
+  if (s2 >= 70) return { label: "\u2B24 Credible", color: "#2563eb" };
+  if (s2 >= 60) return { label: "\u2B24 Generally credible", color: "#6b7280" };
   return { label: "Credibility below threshold", color: "#ef4444" };
 }
 function normalizeMissingAngleBlock(ma) {
