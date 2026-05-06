@@ -52533,6 +52533,13 @@ function normalizeCoverageStatus(raw) {
 var CHART_MARGIN_LINE_AREA = { top: 8, right: 16, bottom: 64, left: 16 };
 var CHART_MARGIN_SENTIMENT = { top: 8, right: 16, bottom: 80, left: 16 };
 var CHART_LEGEND_WRAPPER = { paddingTop: "20px", fontSize: "12px" };
+var TIMELINE_LEGEND_WRAPPER = {
+  ...CHART_LEGEND_WRAPPER,
+  maxWidth: "100%",
+  overflow: "hidden",
+  whiteSpace: "nowrap",
+  textOverflow: "ellipsis"
+};
 var CHART_MIN_HEIGHT = 350;
 var CHART_DATE_MONTHS = [
   "Jan",
@@ -53531,19 +53538,6 @@ function Timeline({ timeline, outlets, outletColorMap }) {
   }, [rows, outlets]);
   const timelineEmpty = (0, import_react36.useMemo)(() => isTimelineBiasDatasetEmpty(rows, outlets), [rows, outlets]);
   const partialMeta = (0, import_react36.useMemo)(() => getChartHistoryPartialMeta(rows, outlets, "timeline"), [rows, outlets]);
-  const timelineRows = (0, import_react36.useMemo)(
-    () => rows.map((row) => {
-      const copy3 = { ...row };
-      for (const source of lineSources) {
-        const val = row?.[source];
-        const estimated = row?.[`${source}__estimated`] === true;
-        copy3[`${source}__real`] = !estimated ? val : null;
-        copy3[`${source}__estimated_only`] = estimated ? val : null;
-      }
-      return copy3;
-    }),
-    [rows, lineSources]
-  );
   const onlyEstimatedVisible = (0, import_react36.useMemo)(() => {
     let sawEstimated = false;
     let sawReal = false;
@@ -53578,7 +53572,7 @@ function Timeline({ timeline, outlets, outletColorMap }) {
       }
     },
     "Building real history..."
-  ) : null, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: "100%", minHeight: CHART_MIN_HEIGHT }, /* @__PURE__ */ import_react36.default.createElement(LineChart, { data: timelineRows, margin: CHART_MARGIN_LINE_AREA }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
+  ) : null, /* @__PURE__ */ import_react36.default.createElement(ResponsiveContainer, { width: "100%", height: "100%", minHeight: CHART_MIN_HEIGHT }, /* @__PURE__ */ import_react36.default.createElement(LineChart, { data: rows, margin: CHART_MARGIN_LINE_AREA }, /* @__PURE__ */ import_react36.default.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#E5E7EB" }), /* @__PURE__ */ import_react36.default.createElement(
     XAxis,
     {
       dataKey: "date",
@@ -53598,46 +53592,22 @@ function Timeline({ timeline, outlets, outletColorMap }) {
       verticalAlign: "bottom",
       align: "center",
       layout: "horizontal",
-      wrapperStyle: CHART_LEGEND_WRAPPER
+      wrapperStyle: TIMELINE_LEGEND_WRAPPER
     }
-  ), lineSources.map((source) => /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, { key: source }, /* @__PURE__ */ import_react36.default.createElement(
+  ), lineSources.map((source) => /* @__PURE__ */ import_react36.default.createElement(
     Line,
     {
+      key: source,
       type: "monotone",
       dataKey: source,
       name: source,
       stroke: outletColorFromMap(outletColorMap, source),
-      strokeWidth: 1.8,
-      strokeOpacity: 0.28,
-      dot: false,
-      connectNulls: true,
-      legendType: "none"
-    }
-  ), /* @__PURE__ */ import_react36.default.createElement(
-    Line,
-    {
-      type: "monotone",
-      dataKey: `${source}__estimated_only`,
-      name: source,
-      stroke: outletColorFromMap(outletColorMap, source),
-      strokeWidth: 2.2,
-      strokeDasharray: "5 4",
-      dot: { r: 2.5 },
-      connectNulls: true,
-      legendType: "none"
-    }
-  ), /* @__PURE__ */ import_react36.default.createElement(
-    Line,
-    {
-      type: "monotone",
-      dataKey: `${source}__real`,
-      name: source,
-      stroke: outletColorFromMap(outletColorMap, source),
-      strokeWidth: 2.4,
+      strokeWidth: 2.3,
       dot: { r: 3 },
-      connectNulls: true
+      connectNulls: true,
+      legendType: "circle"
     }
-  )))))), partialMeta.show ? /* @__PURE__ */ import_react36.default.createElement(ChartHistoryPartialHint, { x: partialMeta.x }) : null);
+  ))))), partialMeta.show ? /* @__PURE__ */ import_react36.default.createElement(ChartHistoryPartialHint, { x: partialMeta.x }) : null);
 }
 function TopicTrendChart({ topic, outlets, outletColorMap }) {
   const q = useQuery({
