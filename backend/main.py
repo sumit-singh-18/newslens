@@ -5,6 +5,7 @@ import re
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+import random
 from pathlib import Path
 from typing import Optional
 
@@ -372,10 +373,40 @@ def _build_bias_timeline(topic: str, db: Session, outlet_names: list[str], days:
         key = (item["snapshot_date"].isoformat(), item["source"])
         grouped.setdefault(key, []).append(float(item["bias_score"]))
 
+    by_source_days: dict[str, set[str]] = {}
+    by_source_scores: dict[str, list[float]] = {}
     for (snapshot_date, source), scores in grouped.items():
         if snapshot_date not in buckets:
             continue
-        buckets[snapshot_date][source] = round(sum(scores) / len(scores), 4)
+        avg_score = round(sum(scores) / len(scores), 4)
+        buckets[snapshot_date][source] = avg_score
+        buckets[snapshot_date][f"{source}__estimated"] = False
+        buckets[snapshot_date][f"{source}__tracking_started"] = snapshot_date
+        by_source_days.setdefault(source, set()).add(snapshot_date)
+        by_source_scores.setdefault(source, []).append(avg_score)
+
+    for source in outlet_names:
+        real_days = sorted(by_source_days.get(source, set()))
+        if len(real_days) != 1:
+            continue
+        real_day = real_days[0]
+        outlet_scores = by_source_scores.get(source, [])
+        if not outlet_scores:
+            continue
+        baseline_center = sum(outlet_scores) / len(outlet_scores)
+        real_day_date = datetime.strptime(real_day, "%Y-%m-%d").date()
+        seeded = random.Random(f"{topic}:{source}:{real_day}")
+        for step in range(6, 0, -1):
+            synthetic_date = (real_day_date - timedelta(days=step)).isoformat()
+            if synthetic_date not in buckets:
+                continue
+            if buckets[synthetic_date].get(source) is not None:
+                continue
+            variance = seeded.uniform(-0.05, 0.05)
+            estimated_bias = max(-1.0, min(1.0, baseline_center + variance))
+            buckets[synthetic_date][source] = round(estimated_bias, 4)
+            buckets[synthetic_date][f"{source}__estimated"] = True
+            buckets[synthetic_date][f"{source}__tracking_started"] = real_day
 
     return [buckets[key] for key in sorted(buckets.keys())]
 

@@ -661,3 +661,10 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 
 ### What changed
 - **`frontend/app.js`**: Replaced hardcoded **`OUTLET_COLORS`** with a fixed **`COLOR_PALETTE`** of **15** accessible hex colors. **`buildOutletColorMap(outlets)`** runs inside **`normalizeAnalyzePayload`** so each **`/analyze`** response gets **`data.outletColorMap`**: outlets in API order map to **`palette[i % 15]`** (unique **`source`** names only). **`outletColorFromMap`** supplies fallbacks for missing keys. **Narrative timeline** lines, **topic coverage** stacked areas (and thus Recharts legend swatches), **bias spectrum** marker dots, **outlet cards** (4px left border), and **Source Profile** sparklines use the same map for one session-consistent palette across topic-specific outlet sets. **`npm run build`**: success.
+
+## [2026-05-05] - Timeline: synthetic baseline when only one real day exists
+
+### What changed
+- **`backend/main.py`**: In **`_build_bias_timeline`**, when an outlet has exactly **1** day of real bias data in the 7-day window, generate up to **6** preceding synthetic baseline points using the outlet baseline mean plus deterministic random variance within **±0.05** (clamped to **[-1, 1]**). Real points remain unchanged. Timeline rows now include per-outlet metadata keys **`<source>__estimated`** and **`<source>__tracking_started`** so clients can distinguish estimated vs real points.
+- **`frontend/app.js`**: **`Timeline`** now renders three overlaid series per outlet: faint connector line (all points), dashed line for estimated points, solid line for real points. Added custom tooltip note for estimated points: **"Estimated baseline — real tracking started [date]"**. Added a subtle chart watermark **"Building real history..."** when only estimated points are visible.
+- **Verification**: **`npm run build`** in **`frontend/`** succeeds.

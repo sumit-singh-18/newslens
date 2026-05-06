@@ -1423,6 +1423,58 @@ function SentimentDistribution({ outlets }) {
   );
 }
 
+function TimelineTooltipContent({ active, label, payload = [] }) {
+  if (!active || !payload.length) return null;
+  const toSourceKey = (dataKey) =>
+    String(dataKey).replace(/__(real|estimated_only|estimated|tracking_started)$/, "");
+  const estimatedHits = payload.filter(
+    (item) =>
+      item &&
+      item.payload &&
+      item.dataKey &&
+      !String(item.dataKey).includes("__tracking_started") &&
+      item.payload[`${toSourceKey(item.dataKey)}__estimated`] === true
+  );
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 8,
+        padding: "10px 12px",
+        boxShadow: "0 8px 20px rgba(15,23,42,0.1)",
+      }}
+    >
+      <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "#334155" }}>
+        {chartTooltipLabelFormatter(label)}
+      </p>
+      <div style={{ marginTop: 6 }}>
+        {payload
+          .filter(
+            (item) =>
+              item &&
+              item.dataKey &&
+              !String(item.dataKey).includes("__")
+          )
+          .map((item) => (
+            <p key={String(item.dataKey)} style={{ margin: "2px 0", fontSize: 12, color: "#334155" }}>
+              <span style={{ color: item.color, fontWeight: 700 }}>{item.name}</span>:{" "}
+              {typeof item.value === "number" ? item.value.toFixed(3) : "—"}
+            </p>
+          ))}
+      </div>
+      {estimatedHits.length ? (
+        <p style={{ margin: "8px 0 0", fontSize: 11, color: "#64748b" }}>
+          Estimated baseline — real tracking started{" "}
+          {formatChartAxisDate(
+            estimatedHits[0].payload[`${toSourceKey(estimatedHits[0].dataKey)}__tracking_started`]
+          )}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function Timeline({ timeline, outlets, outletColorMap }) {
   const rows = Array.isArray(timeline) ? timeline : [];
   const lineSources = useMemo(() => {
@@ -1433,6 +1485,33 @@ function Timeline({ timeline, outlets, outletColorMap }) {
   }, [rows, outlets]);
   const timelineEmpty = useMemo(() => isTimelineBiasDatasetEmpty(rows, outlets), [rows, outlets]);
   const partialMeta = useMemo(() => getChartHistoryPartialMeta(rows, outlets, "timeline"), [rows, outlets]);
+  const timelineRows = useMemo(
+    () =>
+      rows.map((row) => {
+        const copy = { ...row };
+        for (const source of lineSources) {
+          const val = row?.[source];
+          const estimated = row?.[`${source}__estimated`] === true;
+          copy[`${source}__real`] = !estimated ? val : null;
+          copy[`${source}__estimated_only`] = estimated ? val : null;
+        }
+        return copy;
+      }),
+    [rows, lineSources]
+  );
+  const onlyEstimatedVisible = useMemo(() => {
+    let sawEstimated = false;
+    let sawReal = false;
+    for (const row of rows) {
+      for (const source of lineSources) {
+        const value = row?.[source];
+        if (!Number.isFinite(Number(value))) continue;
+        if (row?.[`${source}__estimated`] === true) sawEstimated = true;
+        else sawReal = true;
+      }
+    }
+    return sawEstimated && !sawReal;
+  }, [rows, lineSources]);
 
   if (timelineEmpty) {
     return (
@@ -1453,9 +1532,28 @@ function Timeline({ timeline, outlets, outletColorMap }) {
         <h2>Narrative Timeline</h2>
         <span>Bias score trend over the last 7 days</span>
       </div>
-      <div className="chart-wrap">
+      <div className="chart-wrap" style={{ position: "relative" }}>
+        {onlyEstimatedVisible ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              color: "rgba(71, 85, 105, 0.25)",
+              fontWeight: 700,
+              letterSpacing: "0.06em",
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          >
+            Building real history...
+          </div>
+        ) : null}
         <ResponsiveContainer width="100%" height="100%" minHeight={CHART_MIN_HEIGHT}>
-          <LineChart data={rows} margin={CHART_MARGIN_LINE_AREA}>
+          <LineChart data={timelineRows} margin={CHART_MARGIN_LINE_AREA}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
               dataKey="date"
@@ -1469,7 +1567,7 @@ function Timeline({ timeline, outlets, outletColorMap }) {
               tick={CHART_AXIS_TICK}
             />
             <YAxis domain={[-1, 1]} stroke="#888" tick={CHART_AXIS_TICK} />
-            <Tooltip labelFormatter={chartTooltipLabelFormatter} />
+            <Tooltip content={<TimelineTooltipContent />} />
             <Legend
               iconType="circle"
               verticalAlign="bottom"
@@ -1478,15 +1576,39 @@ function Timeline({ timeline, outlets, outletColorMap }) {
               wrapperStyle={CHART_LEGEND_WRAPPER}
             />
             {lineSources.map((source) => (
-              <Line
-                key={source}
-                type="monotone"
-                dataKey={source}
-                stroke={outletColorFromMap(outletColorMap, source)}
-                strokeWidth={2.2}
-                dot={{ r: 3 }}
-                connectNulls
-              />
+              <React.Fragment key={source}>
+                <Line
+                  type="monotone"
+                  dataKey={source}
+                  name={source}
+                  stroke={outletColorFromMap(outletColorMap, source)}
+                  strokeWidth={1.8}
+                  strokeOpacity={0.28}
+                  dot={false}
+                  connectNulls
+                  legendType="none"
+                />
+                <Line
+                  type="monotone"
+                  dataKey={`${source}__estimated_only`}
+                  name={source}
+                  stroke={outletColorFromMap(outletColorMap, source)}
+                  strokeWidth={2.2}
+                  strokeDasharray="5 4"
+                  dot={{ r: 2.5 }}
+                  connectNulls
+                  legendType="none"
+                />
+                <Line
+                  type="monotone"
+                  dataKey={`${source}__real`}
+                  name={source}
+                  stroke={outletColorFromMap(outletColorMap, source)}
+                  strokeWidth={2.4}
+                  dot={{ r: 3 }}
+                  connectNulls
+                />
+              </React.Fragment>
             ))}
           </LineChart>
         </ResponsiveContainer>
