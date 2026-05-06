@@ -44,6 +44,7 @@ from .news_fetcher import (
 
 DEFAULT_TOPIC_TREND_DAYS = 7
 DEFAULT_OUTLET_SERIES_DAYS = 14
+STRICT_RELEVANCE_CUTOFF = 50
 
 DEFAULT_TRENDING_FALLBACK = (
     "trade war",
@@ -147,6 +148,7 @@ def _build_outlet_scores(
         select(
             Article.id,
             Article.source,
+            Article.relevance_score,
             ArticleScore.sentiment_score,
             ArticleScore.sentiment_label,
             ArticleScore.bias_score,
@@ -164,41 +166,45 @@ def _build_outlet_scores(
             continue
         latest_by_article[row.id] = {
             "source": row.source,
+            "relevance_score": float(row.relevance_score or 0.0),
             "sentiment_score": row.sentiment_score,
             "sentiment_label": row.sentiment_label,
             "bias_score": row.bias_score,
             "bias_label": row.bias_label,
         }
 
-    outlet_scores: dict[str, dict] = {}
+    rows_by_source: dict[str, list[dict]] = defaultdict(list)
     for item in latest_by_article.values():
-        source = item["source"]
-        outlet_scores.setdefault(
-            source,
-            {
-                "source": source,
-                "article_count": 0,
-                "avg_sentiment_score": 0.0,
-                "avg_bias_score": 0.0,
-                "sentiment_labels": {},
-                "bias_labels": {},
-            },
-        )
-        outlet_scores[source]["article_count"] += 1
-        outlet_scores[source]["avg_sentiment_score"] += float(item["sentiment_score"] or 0.0)
-        outlet_scores[source]["avg_bias_score"] += float(item["bias_score"] or 0.0)
-        sentiment_label = item["sentiment_label"] or "Unknown"
-        bias_label = item["bias_label"] or "Unknown"
-        outlet_scores[source]["sentiment_labels"][sentiment_label] = (
-            outlet_scores[source]["sentiment_labels"].get(sentiment_label, 0) + 1
-        )
-        outlet_scores[source]["bias_labels"][bias_label] = (
-            outlet_scores[source]["bias_labels"].get(bias_label, 0) + 1
-        )
+        rows_by_source[item["source"]].append(item)
+
+    def _aggregate_for_source(source: str) -> dict | None:
+        source_rows = rows_by_source.get(source, [])
+        if not source_rows:
+            return None
+        preferred = [r for r in source_rows if r["relevance_score"] >= STRICT_RELEVANCE_CUTOFF]
+        active_rows = preferred if preferred else source_rows
+        out = {
+            "source": source,
+            "article_count": 0,
+            "avg_sentiment_score": 0.0,
+            "avg_bias_score": 0.0,
+            "sentiment_labels": {},
+            "bias_labels": {},
+        }
+        for item in active_rows:
+            out["article_count"] += 1
+            out["avg_sentiment_score"] += float(item["sentiment_score"] or 0.0)
+            out["avg_bias_score"] += float(item["bias_score"] or 0.0)
+            sentiment_label = item["sentiment_label"] or "Unknown"
+            bias_label = item["bias_label"] or "Unknown"
+            out["sentiment_labels"][sentiment_label] = out["sentiment_labels"].get(sentiment_label, 0) + 1
+            out["bias_labels"][bias_label] = out["bias_labels"].get(bias_label, 0) + 1
+        return out
 
     outlets = []
     for source in ordered_sources:
-        if source not in outlet_scores:
+        stats = _aggregate_for_source(source)
+        if stats is None:
             outlets.append(
                 {
                     "source": source,
@@ -214,7 +220,6 @@ def _build_outlet_scores(
             )
             continue
 
-        stats = outlet_scores[source]
         article_count = stats["article_count"]
         stats["avg_sentiment_score"] = round(stats["avg_sentiment_score"] / article_count, 4)
         stats["avg_bias_score"] = round(stats["avg_bias_score"] / article_count, 4)
@@ -493,7 +498,7 @@ def _topic_volume_trend(topic: str, db: Session, days: int, outlet_names: list[s
     rows = db.execute(
         select(Article.fetched_at, Article.source).where(
             Article.topic == normalized,
-            Article.relevance_score >= MIN_RELEVANCE_SCORE,
+            Article.relevance_score >= STRICT_RELEVANCE_CUTOFF,
             Article.fetched_at >= start_dt,
             Article.fetched_at <= end_dt,
         )
@@ -632,12 +637,30 @@ async def analyze_topic(
     if _topic_has_unscored_articles(normalized_topic, db):
         score_result = nlp_pipeline.score_topic_articles(normalized_topic, db)
     else:
-        n_art = db.scalar(select(func.count(Article.id)).where(Article.topic == normalized_topic)) or 0
+        n_art = (
+            db.scalar(
+                select(func.count(Article.id)).where(
+                    Article.topic == normalized_topic,
+                    Article.relevance_score >= STRICT_RELEVANCE_CUTOFF,
+                )
+            )
+            or 0
+        )
         score_result = {
             "topic": normalized_topic,
             "article_count": int(n_art),
             "scored_count": int(n_art),
         }
+
+    strict_count = (
+        db.scalar(
+            select(func.count(Article.id)).where(
+                Article.topic == normalized_topic,
+                Article.relevance_score >= STRICT_RELEVANCE_CUTOFF,
+            )
+        )
+        or 0
+    )
 
     framing_map = _framing_by_source_for_outlets(normalized_topic, db, selected)
     score_data = _build_outlet_scores(normalized_topic, db, selected, framing_map)
@@ -671,7 +694,7 @@ async def analyze_topic(
     most_left_outlet, most_right_outlet = extrem_bias_outlets(score_data["outlets"])
 
     source_pool = list(fetch_meta.get("source_pool") or detect_source_categories_for_query(normalized_topic))
-    coverage_status = _coverage_confidence_status(int(score_result["article_count"]))
+    coverage_status = _coverage_confidence_status(int(strict_count))
 
     reasoning = (
         f"Confidence: {llm_data.get('confidence') or 'unknown'}. "
@@ -696,7 +719,7 @@ async def analyze_topic(
             "source_pool": source_pool,
             "fetch": fetch_meta,
             "scoring": {
-                "article_count": score_result["article_count"],
+                "article_count": int(strict_count),
                 "scored_count": score_result["scored_count"],
             },
             "missing_angle": {

@@ -668,3 +668,11 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 - **`backend/main.py`**: In **`_build_bias_timeline`**, when an outlet has exactly **1** day of real bias data in the 7-day window, generate up to **6** preceding synthetic baseline points using the outlet baseline mean plus deterministic random variance within **±0.05** (clamped to **[-1, 1]**). Real points remain unchanged. Timeline rows now include per-outlet metadata keys **`<source>__estimated`** and **`<source>__tracking_started`** so clients can distinguish estimated vs real points.
 - **`frontend/app.js`**: **`Timeline`** now renders three overlaid series per outlet: faint connector line (all points), dashed line for estimated points, solid line for real points. Added custom tooltip note for estimated points: **"Estimated baseline — real tracking started [date]"**. Added a subtle chart watermark **"Building real history..."** when only estimated points are visible.
 - **Verification**: **`npm run build`** in **`frontend/`** succeeds.
+
+## [2026-05-05] - Relevance>=50 strict counts for trend + analyzed positions
+
+### What changed
+- **`backend/main.py`**: Added **`STRICT_RELEVANCE_CUTOFF = 50`** and used it in **`_topic_volume_trend`** so `/topic-trend` article volume counts include only rows where **`Article.relevance_score >= 50`**.
+- **`backend/main.py`**: Updated `/analyze` scoring payload so **`scoring.article_count`** (used by "Positions based on N articles analyzed") is derived from a strict count query at **`relevance_score >= 50`**.
+- **`backend/main.py`**: Updated **`_build_outlet_scores`** aggregation logic to prefer only outlet rows with **`relevance_score >= 50`** for bias/sentiment averages and label distributions, with automatic fallback to all outlet rows (still above `MIN_RELEVANCE_SCORE`) when an outlet has zero strict rows.
+- **Verification**: **`npm run build`** in **`frontend/`** succeeds.
