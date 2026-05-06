@@ -684,3 +684,10 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 - **`frontend/app.js`**: Set **`legendType="circle"`** on each outlet line so legend markers are consistent and explicit.
 - **`frontend/app.js`**: Added timeline-specific legend wrapper constraints (`maxWidth`, overflow handling) to reduce legend overflow/crowding.
 - **Verification**: **`npm run build`** in **`frontend/`** succeeds.
+
+## [2026-05-05] - Enforce approved vetted source IDs only
+
+### What changed
+- **`backend/news_fetcher.py`**: Restricted **`VETTED_SOURCES_BY_CATEGORY`** to only the approved 15 NewsAPI source IDs: **`associated-press`**, **`reuters`**, **`bbc-news`**, **`nbc-news`**, **`abc-news`**, **`cbs-news`**, **`npr`**, **`the-washington-post`**, **`the-wall-street-journal`**, **`the-guardian-uk`**, **`the-new-york-times`**, **`cnn`**, **`fox-news`**, **`msnbc`**, **`bloomberg`**.
+- **`backend/news_fetcher.py`**: Removed non-approved sources from `SOURCE_DISPLAY_NAMES` so no non-vetted source IDs are recognized in the fetch mapping path.
+- **Verification**: `ALL_VETTED_SOURCE_IDS_RANKED` now prints exactly the approved list and excludes banned IDs (`national-geographic`, `new-scientist`, `newsweek`, `wired`).
