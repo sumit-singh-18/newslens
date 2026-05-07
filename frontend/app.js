@@ -1719,6 +1719,9 @@ function InsufficientCoverageCard({ onTryBroaderSearch }) {
         Few articles matched this topic in our current window. Try a shorter or broader query to surface more
         outlets.
       </p>
+      <p className="insufficient-coverage-body">
+        Note: NewsLens covers current news only. Historical topics may not have recent coverage.
+      </p>
       <button type="button" className="btn-broader-search" onClick={onTryBroaderSearch}>
         Try a broader search
       </button>
@@ -2204,6 +2207,7 @@ function Hero({
   runSearch,
   trendingTopics,
   trendingLoading,
+  showPreSearchNote,
 }) {
   return (
     <section className="hero" id="search-anchor">
@@ -2226,21 +2230,46 @@ function Hero({
           Analyze
         </button>
       </form>
-      <div className="suggested-topics">
-        <p className="suggested-topics-label">Trending topics</p>
-        <div className="suggested-topics-row">
+      {showPreSearchNote ? (
+        <p
+          className="micro-muted"
+          style={{ fontSize: "0.75rem", color: "#9CA3AF", textAlign: "center", paddingTop: 8, marginBottom: 24 }}
+        >
+          Analyzes coverage from the last 30 days across verified credible outlets
+        </p>
+      ) : null}
+      <div className="suggested-topics" style={{ textAlign: "center", marginBottom: 28 }}>
+        <p className="suggested-topics-label" style={{ fontSize: "0.75rem", letterSpacing: "0.08em", color: "#9CA3AF" }}>
+          TRENDING TOPICS
+        </p>
+        <div className="suggested-topics-row" style={{ justifyContent: "center" }}>
           {trendingLoading
-            ? Array.from({ length: 7 }).map((_, i) => (
+            ? Array.from({ length: 4 }).map((_, i) => (
                 <span key={`trend-skel-${i}`} className="suggestion-tag suggestion-tag-skeleton" aria-hidden />
               ))
-            : trendingTopics.map((row) => (
+            : trendingTopics.slice(0, 4).map((row) => (
                 <button
                   key={row.topic}
                   type="button"
                   className="suggestion-tag"
                   onClick={() => runSearch(row.topic)}
+                  style={{
+                    textTransform: "lowercase",
+                    fontSize: "0.875rem",
+                    padding: "0.375rem 1rem",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "9999px",
+                    backgroundColor: "#FFFFFF",
+                    color: "#374151",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#F9FAFB";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#FFFFFF";
+                  }}
                 >
-                  {row.topic}
+                  {String(row.topic ?? "").toLowerCase()}
                 </button>
               ))}
         </div>
@@ -2263,12 +2292,33 @@ function Hero({
           </button>
         </div>
       ) : null}
-      <div className="suggested-topics" style={{ marginTop: "20px" }}>
-        <p className="suggested-topics-label">Recent searches</p>
-        <div className="history-row">
-          {history.map((item) => (
-            <button key={item} className="history-chip" onClick={() => runSearch(item)}>
-              {item}
+      <div className="suggested-topics" style={{ marginTop: "20px", textAlign: "center" }}>
+        <p className="suggested-topics-label" style={{ fontSize: "0.75rem", letterSpacing: "0.08em", color: "#9CA3AF" }}>
+          🕐 RECENT SEARCHES
+        </p>
+        <div className="history-row" style={{ justifyContent: "center" }}>
+          {history.slice(0, 3).map((item) => (
+            <button
+              key={item}
+              className="history-chip"
+              onClick={() => runSearch(item)}
+              style={{
+                textTransform: "lowercase",
+                fontSize: "0.75rem",
+                padding: "0.375rem 1rem",
+                border: "1px solid #E5E7EB",
+                borderRadius: "9999px",
+                backgroundColor: "#FFFFFF",
+                color: "#374151",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#F9FAFB";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#FFFFFF";
+              }}
+            >
+              {String(item ?? "").toLowerCase()}
             </button>
           ))}
         </div>
@@ -2429,10 +2479,13 @@ function App() {
         runSearch={runSearch}
         trendingTopics={trendingQuery.data || []}
         trendingLoading={trendingQuery.isLoading}
+        showPreSearchNote={!topic}
       />
 
       {!topic ? (
-        <p className="empty-note">Start with a topic to generate a full outlet comparison dashboard.</p>
+        <p className="empty-note" style={{ fontSize: "0.875rem", color: "#9CA3AF", marginTop: 32 }}>
+          Start with a topic to generate a full outlet comparison dashboard.
+        </p>
       ) : null}
       {query.isFetching ? <LoadingSkeleton /> : null}
 
