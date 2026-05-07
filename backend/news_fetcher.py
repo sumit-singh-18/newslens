@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
@@ -14,7 +13,7 @@ from dotenv import load_dotenv
 from sqlalchemy import delete, exists, func, select
 from sqlalchemy.orm import Session
 
-from .credibility_engine import MIN_CREDIBILITY_SCORE, compute_credibility_score, is_credible
+from .credible_domains import get_domains_string
 from .database import Article, ArticleScore, TopicOutletFraming, normalize_topic
 from .framing_extract import clean_text
 from .nlp_pipeline import NLPPipeline
@@ -24,7 +23,6 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 logger = logging.getLogger(__name__)
 
 NEWSAPI_EVERYTHING = "https://newsapi.org/v2/everything"
-NEWSAPI_MAX_SOURCES_PER_REQUEST = 20
 RELAX_ARTICLE_TARGET = 10
 
 
@@ -37,29 +35,6 @@ def _normalize_fetch_topic_input(raw: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     return normalize_topic(s)
 
-
-SOURCE_DISPLAY_NAMES: dict[str, str] = {
-    "associated-press": "Associated Press",
-    "reuters": "Reuters",
-    "bbc-news": "BBC News",
-    "nbc-news": "NBC News",
-    "abc-news": "ABC News",
-    "cbs-news": "CBS News",
-    "npr": "NPR",
-    "the-washington-post": "Washington Post",
-    "the-wall-street-journal": "Wall Street Journal",
-    "the-guardian-uk": "The Guardian",
-    "the-new-york-times": "New York Times",
-    "cnn": "CNN",
-    "fox-news": "Fox News",
-    "msnbc": "MSNBC",
-    "bloomberg": "Bloomberg",
-    "pbs": "PBS",
-    "financial-times": "Financial Times",
-    "the-atlantic": "The Atlantic",
-    "time": "TIME",
-    "foreign-policy": "Foreign Policy",
-}
 
 _TECH_KEYWORDS = frozenset(
     {
@@ -204,8 +179,8 @@ class NewsFetcherError(Exception):
 
 def detect_source_categories_for_query(query: str) -> list[str]:
     _ = query
-    # We fetch without a NewsAPI `sources` filter; credibility is applied post-fetch.
-    return [f"credibility>={MIN_CREDIBILITY_SCORE}"]
+    # Articles are restricted via NewsAPI `domains` (credible allowlist).
+    return ["credible_domains"]
 
 
 def source_ids_for_categories(categories: list[str]) -> list[str]:
@@ -723,11 +698,7 @@ def _ingest_articles_into_buckets(
     added = 0
     for item in incoming_articles:
         src_obj = item.get("source") or {}
-        if not is_credible(src_obj):
-            continue
-        credibility = compute_credibility_score(src_obj)
-        source_id = (src_obj.get("id") or "").strip()
-        source_name = SOURCE_DISPLAY_NAMES.get(source_id) or (src_obj.get("name") or "").strip()
+        source_name = (src_obj.get("name") or "").strip()
         if not source_name:
             continue
         url = (item.get("url") or "").strip()
@@ -743,9 +714,7 @@ def _ingest_articles_into_buckets(
         seen_urls.add(url)
         by_source[source_name].append(
             {
-                "source_id": source_id,
                 "source": source_name,
-                "credibility_score": credibility,
                 "url": url,
                 "title": title,
                 "description": description,
@@ -771,46 +740,27 @@ def _unique_fetch_attempts(
     return out
 
 
-async def _fetch_everything_for_source_ids(
+async def _fetch_everything_for_domains(
     client: httpx.AsyncClient,
     *,
     q: str,
-    source_ids: list[str] | None,
     headers: dict[str, str],
 ) -> list[dict[str, Any]]:
     if not q:
         return []
-    base_params: dict[str, Any] = {
+    params: dict[str, Any] = {
         "q": q,
         "language": "en",
         "sortBy": "relevancy",
         "pageSize": NEWSAPI_PAGE_SIZE,
+        "domains": get_domains_string(),
     }
-    chunks: list[list[str] | None]
-    if source_ids:
-        chunks = [
-            source_ids[i : i + NEWSAPI_MAX_SOURCES_PER_REQUEST]
-            for i in range(0, len(source_ids), NEWSAPI_MAX_SOURCES_PER_REQUEST)
-        ]
-    else:
-        chunks = [None]
-
-    async def one_chunk(chunk: list[str] | None) -> list[dict[str, Any]]:
-        params = dict(base_params)
-        if chunk:
-            params["sources"] = ",".join(chunk)
-        r = await client.get(NEWSAPI_EVERYTHING, params=params, headers=headers)
-        r.raise_for_status()
-        payload = r.json()
-        if payload.get("status") != "ok":
-            raise NewsFetcherError(f"NewsAPI returned error: {payload.get('message', 'unknown error')}")
-        return list(payload.get("articles") or [])
-
-    batches = await asyncio.gather(*[one_chunk(c) for c in chunks])
-    merged: list[dict[str, Any]] = []
-    for batch in batches:
-        merged.extend(batch)
-    return merged
+    r = await client.get(NEWSAPI_EVERYTHING, params=params, headers=headers)
+    r.raise_for_status()
+    payload = r.json()
+    if payload.get("status") != "ok":
+        raise NewsFetcherError(f"NewsAPI returned error: {payload.get('message', 'unknown error')}")
+    return list(payload.get("articles") or [])
 
 
 def _topic_has_any_unscored_article(topic: str, db: Session) -> bool:
@@ -912,9 +862,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
                     continue
                 by_source.clear()
                 seen_urls.clear()
-                articles = await _fetch_everything_for_source_ids(
-                    client, q=q, source_ids=pool_ids, headers=headers
-                )
+                articles = await _fetch_everything_for_domains(client, q=q, headers=headers)
                 n1 = _ingest_articles_into_buckets(
                     articles,
                     by_source,
@@ -922,7 +870,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
                 )
                 total_in_pool = sum(len(v) for v in by_source.values())
                 _log_source_article_counts(
-                    f"everything credibility-filtered ingested={n1} total={total_in_pool} q={q!r} pool={pool_cats}",
+                    f"everything domains-filtered ingested={n1} total={total_in_pool} q={q!r} pool={pool_cats}",
                     by_source,
                 )
                 final_source_pool = pool_cats
@@ -1014,11 +962,7 @@ async def fetch_and_store_articles(topic: str, db: Session) -> dict[str, Any]:
         db.add(article)
         db.flush()
 
-        # Persist per-article outlet credibility so the analyze endpoint can surface an
-        # outlet-level indicator without requiring additional NewsAPI calls.
         raw_scores = analysis.get("raw_scores") or {}
-        if raw_row.get("credibility_score") != null:
-            raw_scores["credibility_score"] = float(raw_row["credibility_score"])
         analysis["raw_scores"] = raw_scores
 
         db.add(

@@ -169,7 +169,7 @@ def _build_outlet_scores(
         try:
             raw_scores = row.raw_scores or {}
             c = raw_scores.get("credibility_score")
-            credibility_score = float(c) if c != null else None
+            credibility_score = float(c) if c is not None else None
         except Exception:
             credibility_score = None
         latest_by_article[row.id] = {
@@ -207,7 +207,7 @@ def _build_outlet_scores(
             out["article_count"] += 1
             out["avg_sentiment_score"] += float(item["sentiment_score"] or 0.0)
             out["avg_bias_score"] += float(item["bias_score"] or 0.0)
-            if item.get("credibility_score") != null:
+            if item.get("credibility_score") is not None:
                 cred_sum += float(item["credibility_score"])
                 cred_count += 1
             sentiment_label = item["sentiment_label"] or "Unknown"

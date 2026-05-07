@@ -720,3 +720,28 @@ Persisted extractive framing was brittle; generating summaries from the highest-
 
 ### Notes
 - Frontend credibility indicator maps the new 0–100 score range into the same “High/Credible/Generally credible” buckets.
+
+## [2026-05-06] - Domains allowlist replaces credibility engine and NewsAPI source-ID filtering
+
+### Challenge
+NewsAPI often returns articles whose `source.id` is missing or inconsistent, so post-fetch credibility scoring and source-ID mapping produced brittle filtering and thin outlet coverage.
+
+### Investigation
+We confirmed `/everything` supports a comma-separated **`domains`** parameter, which restricts results to known publisher hosts before ingestion. That aligns with product intent (major outlets only) without relying on verified source IDs.
+
+### Decision
+Maintain an explicit **`CREDIBLE_DOMAINS`** list in **`backend/credible_domains.py`**, expose **`get_domains_string()`** for the fetcher, and pass **`domains=...`** on every NewsAPI **`/everything`** request. Remove **`backend/credibility_engine.py`** and all ingestion-time credibility checks and per-article credibility persistence from the fetch path.
+
+### Implementation
+- **Added** **`backend/credible_domains.py`** with tiered domains and **`get_domains_string()`**.
+- **Updated** **`backend/news_fetcher.py`**: `_fetch_everything_for_domains` always sends **`domains`**; **`_ingest_articles_into_buckets`** no longer calls credibility helpers or maps **`source_id`** to display names; **`detect_source_categories_for_query`** now reports **`["credible_domains"]`** for fetch metadata; removed unused **`SOURCE_DISPLAY_NAMES`** / **`asyncio`** chunking for **`sources`**.
+- **Deleted** **`backend/credibility_engine.py`** after **`news_fetcher`** dropped imports.
+- **Fixed** **`backend/main.py`** comparisons that incorrectly used JS **`null`** (must be **`None`** in Python) so **`/analyze`** no longer raises **`NameError`** during outlet aggregation.
+- **Adjusted tests**: **`backend/tests/test_news_fetcher_categorization.py`** for domains-only metadata; **`backend/tests/test_analyze_resilience.py`** seeds **`relevance_score`** at **`STRICT_RELEVANCE_CUTOFF`** so **`scoring.article_count`** matches API semantics.
+
+### Result
+- **NewsAPI diagnostic** (`q=india diplomacy`, **`domains=get_domains_string()`**): **`totalResults: 41`**, titles from Atlantic / Indian Express / Al Jazeera / Foreign Policy / DW etc.
+- **Spot checks**: **`trade war`** → total **632**; **`pakistan politics`** → total **71** (same **`domains`** params).
+- **`PYTHONPATH=. python3 -m pytest backend/tests`**: **20 passed**.
+- **`npm run build`** in **`frontend/`**: success.
+- **`GET /analyze`** against **`127.0.0.1:8000`** returned **`success: true`** with non-empty **`selected_outlets`** for **`india diplomacy`**, **`trade war`**, and **`pakistan politics`** (port **8000** was already bound locally; verification used the running API).
