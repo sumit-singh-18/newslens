@@ -822,3 +822,14 @@ Introduce **`normalizeTopicForApi(raw)`** (hyphens/underscores → spaces, colla
 
 ### Verification
 - **`npm run build`** in **`frontend/`**: success.
+
+
+## [2026-05-06] - Navbar brand logo mark + wordmark
+
+### What changed
+- **`frontend/app.js`**: Replaced the plain-text navbar brand with an inline SVG logo mark (28x28 lens circle with centered blue-gray-red gradient bar) plus a split-color **News**/**Lens** wordmark, keeping the tagline below.
+- **`frontend/app.js`**: Preserved the original brand JSX as a one-step restore comment labeled **`// OLD VERSION`**.
+- **`frontend/app.js`**: Made the full logo lockup clickable to reset to home state and smoothly scroll to the top.
+
+### Verification
+- **`npm run build`** in **`frontend/`**: success.

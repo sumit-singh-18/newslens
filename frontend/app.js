@@ -2042,11 +2042,45 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
   );
 }
 
-function Header({ onStartAnalysis }) {
+function Header({ onStartAnalysis, onBrandClick }) {
   return (
     <header className="topbar">
       <div className="brand-lockup">
+        {/* // OLD VERSION
         <div className="brand">NewsLens</div>
+        */}
+        <button
+          type="button"
+          className="brand"
+          onClick={onBrandClick}
+          aria-label="Go to NewsLens home"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "10px",
+            border: "none",
+            background: "transparent",
+            padding: 0,
+            cursor: "pointer",
+          }}
+        >
+          <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+            <defs>
+              <linearGradient id="newslens-bias-gradient" x1="0%" y1="50%" x2="100%" y2="50%">
+                <stop offset="0%" stopColor="#3B82F6" />
+                <stop offset="50%" stopColor="#6B7280" />
+                <stop offset="100%" stopColor="#EF4444" />
+              </linearGradient>
+            </defs>
+            <circle cx="14" cy="14" r="10" fill="#FFFFFF" stroke="#1A1A2E" strokeWidth="2.5" />
+            <line x1="21" y1="21" x2="30" y2="30" stroke="#1A1A2E" strokeWidth="3" strokeLinecap="round" />
+            <rect x="7" y="13" width="14" height="3" rx="1.5" fill="url(#newslens-bias-gradient)" />
+          </svg>
+          <span style={{ fontWeight: 700, fontSize: "1.25rem", lineHeight: 1 }}>
+            <span style={{ color: "#1A1A2E" }}>News</span>
+            <span style={{ color: "#3B82F6" }}>Lens</span>
+          </span>
+        </button>
         <p className="brand-tag">Truth in headlines. Bias in framing.</p>
       </div>
       <nav>
@@ -2428,6 +2462,15 @@ function App() {
     focusSearchArea();
   };
 
+  const handleBrandClick = () => {
+    setSearchInput("");
+    setTopic("");
+    setSearchValidationError(null);
+    setCompareSelection([]);
+    setReadAcrossOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const handleTryAgainAfterValidation = () => {
     const display = lastSuccessfulDisplayRef.current;
     const prev = lastSuccessfulTopicRef.current;
@@ -2464,7 +2507,7 @@ function App() {
 
   return (
     <div className="page">
-      <Header onStartAnalysis={handleStartAnalysis} />
+      <Header onStartAnalysis={handleStartAnalysis} onBrandClick={handleBrandClick} />
       <Hero
         searchInput={searchInput}
         onSearchInputChange={onSearchInputChange}
