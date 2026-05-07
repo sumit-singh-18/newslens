@@ -52862,8 +52862,7 @@ function normalizeOutlet(o) {
       headline: null,
       top_article_url: null,
       top_article_headline: null,
-      top_article_preview: null,
-      credibility_score: null
+      top_article_preview: null
     };
   }
   const sl = o.sentiment_labels && typeof o.sentiment_labels === "object" ? { ...o.sentiment_labels } : {};
@@ -52900,17 +52899,8 @@ function normalizeOutlet(o) {
     framing_summary: o.framing_summary == null || o.framing_summary === "" ? null : typeof o.framing_summary === "string" ? o.framing_summary : String(o.framing_summary),
     top_article_url: o.top_article_url == null || o.top_article_url === "" ? null : String(o.top_article_url),
     top_article_headline: o.top_article_headline == null || o.top_article_headline === "" ? null : String(o.top_article_headline),
-    top_article_preview: o.top_article_preview == null || o.top_article_preview === "" ? null : String(o.top_article_preview),
-    credibility_score: typeof o.credibility_score === "number" && Number.isFinite(o.credibility_score) ? o.credibility_score : null
+    top_article_preview: o.top_article_preview == null || o.top_article_preview === "" ? null : String(o.top_article_preview)
   };
-}
-function credibilityIndicator(score) {
-  const s2 = typeof score === "number" && Number.isFinite(score) ? score : null;
-  if (s2 == null) return { label: "Credibility unrated", color: "#94a3b8" };
-  if (s2 >= 90) return { label: "\u2B24 High credibility", color: "#16a34a" };
-  if (s2 >= 70) return { label: "\u2B24 Credible", color: "#2563eb" };
-  if (s2 >= 60) return { label: "\u2B24 Generally credible", color: "#6b7280" };
-  return { label: "Credibility below threshold", color: "#ef4444" };
 }
 function normalizeMissingAngleBlock(ma) {
   if (!ma || typeof ma !== "object") {
@@ -53400,7 +53390,6 @@ function SourceProfileSection({ outletName, sparklineColor }) {
 function OutletCard({ outlet, outletColorMap, compareSelected, onCompareClick }) {
   const selectedClass = compareSelected ? "outlet-card-selected" : "";
   const accent = outletColorFromMap(outletColorMap, outlet.source);
-  const cred = credibilityIndicator(outlet.credibility_score);
   return /* @__PURE__ */ import_react36.default.createElement(
     "article",
     {
@@ -53411,15 +53400,7 @@ function OutletCard({ outlet, outletColorMap, compareSelected, onCompareClick })
         borderLeftColor: accent
       }
     },
-    /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("div", null, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source), /* @__PURE__ */ import_react36.default.createElement(
-      "p",
-      {
-        className: "micro-muted",
-        style: { margin: "2px 0 0", fontSize: "0.74rem", color: cred.color },
-        title: "Based on factual reporting record, sourcing standards, and editorial transparency"
-      },
-      cred.label
-    )), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")),
+    /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-card-top" }, /* @__PURE__ */ import_react36.default.createElement("div", null, /* @__PURE__ */ import_react36.default.createElement("h3", null, outlet.source)), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-compare", onClick: () => onCompareClick(outlet.source) }, "Compare")),
     /* @__PURE__ */ import_react36.default.createElement("div", { className: "outlet-badges" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: biasBadgeClass(outlet.dominant_bias_label) }, outlet.dominant_bias_label || "No bias label"), /* @__PURE__ */ import_react36.default.createElement("p", { className: sentimentBadgeClass(outlet.dominant_sentiment_label) }, outlet.dominant_sentiment_label || "Neutral")),
     outlet.framing_summary ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "body" }, outlet.framing_summary) : null,
     /* @__PURE__ */ import_react36.default.createElement("div", { className: "metric-row" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof outlet.avg_sentiment_score === "number" ? outlet.avg_sentiment_score.toFixed(3) : "N/A")),
