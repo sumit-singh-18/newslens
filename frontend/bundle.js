@@ -52489,6 +52489,12 @@ function normalizeRecentSearchDisplay(raw) {
   s2 = s2.replace(/\s+/g, " ").trim();
   return s2;
 }
+function normalizeTopicForApi(raw) {
+  let s2 = String(raw ?? "");
+  s2 = s2.replace(/[-_]+/g, " ");
+  s2 = s2.replace(/\s+/g, " ").trim();
+  return s2.toLowerCase();
+}
 function readRecentHistoryForDisplay() {
   try {
     const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
@@ -52500,7 +52506,8 @@ function readRecentHistoryForDisplay() {
       if (!label) continue;
       if (seen.has(label)) continue;
       seen.add(label);
-      out.push(label);
+      const display = String(item ?? "").trim();
+      out.push(display || item);
       if (out.length >= 5) break;
     }
     return out;
@@ -53030,8 +53037,10 @@ var biasBadgeClass = (label) => {
   return "badge gray-bg";
 };
 function updateHistory(term) {
-  const normalized = normalizeRecentSearchDisplay(term);
-  if (!normalized) return;
+  const raw = String(term ?? "").trim();
+  if (!raw) return;
+  const norm = normalizeRecentSearchDisplay(term);
+  if (!norm) return;
   const prev = (() => {
     try {
       const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
@@ -53040,18 +53049,10 @@ function updateHistory(term) {
       return [];
     }
   })();
-  const merged = [
-    normalized,
-    ...prev.map((x2) => normalizeRecentSearchDisplay(x2)).filter((x2) => x2 && x2 !== normalized)
-  ];
-  const seen = /* @__PURE__ */ new Set();
-  const next = [];
-  for (const x2 of merged) {
-    if (!x2 || seen.has(x2)) continue;
-    seen.add(x2);
-    next.push(x2);
-    if (next.length >= 5) break;
+  for (const x2 of prev) {
+    if (normalizeRecentSearchDisplay(x2) === norm) return;
   }
+  const next = [raw, ...prev].slice(0, 5);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
 function roundThreeTo100(floats) {
@@ -53997,6 +53998,7 @@ function App() {
   const [history, setHistory] = (0, import_react36.useState)(() => readRecentHistoryForDisplay());
   const searchRef = (0, import_react36.useRef)(null);
   const lastSuccessfulTopicRef = (0, import_react36.useRef)("");
+  const lastSuccessfulDisplayRef = (0, import_react36.useRef)("");
   const [searchValidationError, setSearchValidationError] = (0, import_react36.useState)(null);
   const [compareSelection, setCompareSelection] = (0, import_react36.useState)([]);
   const [readAcrossOpen, setReadAcrossOpen] = (0, import_react36.useState)(false);
@@ -54037,12 +54039,18 @@ function App() {
     });
   }, []);
   const runSearch = (nextTopic) => {
-    const normalized = normalizeRecentSearchDisplay(nextTopic);
-    if (!normalized) return;
+    const raw = String(nextTopic ?? "").trim();
+    const v = validateSearchTopicInput(raw);
+    if (!v.ok) return;
+    const norm = normalizeRecentSearchDisplay(raw);
+    if (!norm) return;
+    const forApi = normalizeTopicForApi(raw);
+    if (!forApi) return;
+    lastSuccessfulDisplayRef.current = raw;
     setSearchValidationError(null);
-    setTopic(normalized);
-    setSearchInput(normalized);
-    updateHistory(normalized);
+    setTopic(forApi);
+    setSearchInput(raw);
+    updateHistory(raw);
     setHistory(readRecentHistoryForDisplay());
     setCompareSelection([]);
   };
@@ -54074,8 +54082,12 @@ function App() {
     focusSearchArea();
   };
   const handleTryAgainAfterValidation = () => {
+    const display = lastSuccessfulDisplayRef.current;
     const prev = lastSuccessfulTopicRef.current;
-    if (prev) {
+    if (display) {
+      setSearchValidationError(null);
+      runSearch(display);
+    } else if (prev) {
       setSearchValidationError(null);
       runSearch(prev);
     } else {
