@@ -40,7 +40,7 @@ const HISTORY_KEY = "newslens-search-history";
 const READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 const DEFAULT_SERIES_LABEL = "14d";
 
-/** Normalize stored/display recent-search labels: lowercase, hyphens/dots → spaces, collapse WS. */
+/** History dedupe key: lowercase, trim, hyphens/dots → spaces, collapse WS. */
 function normalizeRecentSearchDisplay(raw) {
   let s = String(raw ?? "").trim().toLowerCase();
   s = s.replace(/[-.]+/g, " ");
@@ -48,7 +48,15 @@ function normalizeRecentSearchDisplay(raw) {
   return s;
 }
 
-/** Dedupe by normalized label; max 5 (order preserved). */
+/** Copy of user topic for API/query key only (matches backend _normalize_fetch_topic_input + normalize_topic). */
+function normalizeTopicForApi(raw) {
+  let s = String(raw ?? "");
+  s = s.replace(/[-_]+/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  return s.toLowerCase();
+}
+
+/** Read history: original strings for chips; dedupe by normalized key; max 5. */
 function readRecentHistoryForDisplay() {
   try {
     const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
@@ -60,7 +68,8 @@ function readRecentHistoryForDisplay() {
       if (!label) continue;
       if (seen.has(label)) continue;
       seen.add(label);
-      out.push(label);
+      const display = String(item ?? "").trim();
+      out.push(display || item);
       if (out.length >= 5) break;
     }
     return out;
@@ -734,8 +743,10 @@ const biasBadgeClass = (label) => {
 };
 
 function updateHistory(term) {
-  const normalized = normalizeRecentSearchDisplay(term);
-  if (!normalized) return;
+  const raw = String(term ?? "").trim();
+  if (!raw) return;
+  const norm = normalizeRecentSearchDisplay(term);
+  if (!norm) return;
   const prev = (() => {
     try {
       const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
@@ -744,18 +755,10 @@ function updateHistory(term) {
       return [];
     }
   })();
-  const merged = [
-    normalized,
-    ...prev.map((x) => normalizeRecentSearchDisplay(x)).filter((x) => x && x !== normalized),
-  ];
-  const seen = new Set();
-  const next = [];
-  for (const x of merged) {
-    if (!x || seen.has(x)) continue;
-    seen.add(x);
-    next.push(x);
-    if (next.length >= 5) break;
+  for (const x of prev) {
+    if (normalizeRecentSearchDisplay(x) === norm) return;
   }
+  const next = [raw, ...prev].slice(0, 5);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
 }
 
@@ -2280,6 +2283,7 @@ function App() {
   const [history, setHistory] = useState(() => readRecentHistoryForDisplay());
   const searchRef = useRef(null);
   const lastSuccessfulTopicRef = useRef("");
+  const lastSuccessfulDisplayRef = useRef("");
   const [searchValidationError, setSearchValidationError] = useState(null);
   const [compareSelection, setCompareSelection] = useState([]);
   const [readAcrossOpen, setReadAcrossOpen] = useState(false);
@@ -2327,12 +2331,18 @@ function App() {
   // #endregion
 
   const runSearch = (nextTopic) => {
-    const normalized = normalizeRecentSearchDisplay(nextTopic);
-    if (!normalized) return;
+    const raw = String(nextTopic ?? "").trim();
+    const v = validateSearchTopicInput(raw);
+    if (!v.ok) return;
+    const norm = normalizeRecentSearchDisplay(raw);
+    if (!norm) return;
+    const forApi = normalizeTopicForApi(raw);
+    if (!forApi) return;
+    lastSuccessfulDisplayRef.current = raw;
     setSearchValidationError(null);
-    setTopic(normalized);
-    setSearchInput(normalized);
-    updateHistory(normalized);
+    setTopic(forApi);
+    setSearchInput(raw);
+    updateHistory(raw);
     setHistory(readRecentHistoryForDisplay());
     setCompareSelection([]);
   };
@@ -2369,8 +2379,12 @@ function App() {
   };
 
   const handleTryAgainAfterValidation = () => {
+    const display = lastSuccessfulDisplayRef.current;
     const prev = lastSuccessfulTopicRef.current;
-    if (prev) {
+    if (display) {
+      setSearchValidationError(null);
+      runSearch(display);
+    } else if (prev) {
       setSearchValidationError(null);
       runSearch(prev);
     } else {

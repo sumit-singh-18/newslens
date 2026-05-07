@@ -783,3 +783,20 @@ Add **`backend/tests/test_pipeline.py`** that mocks **`_fetch_everything_for_dom
 
 ### Result
 - **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: all tests pass (including **25** total after adding the module).
+
+## [2026-05-07] - Search bar preserves casing; recent history dedupes by normalized key
+
+### Challenge
+Submitting a search rewrote the input to an all-lowercase, punctuation-flattened string, and recent-search chips always showed that normalized form. The same topic typed with different casing created redundant history entries.
+
+### Investigation
+**`runSearch`** called **`normalizeRecentSearchDisplay`** then assigned it to both **`topic`** and **`searchInput`**. **`updateHistory`** stored only normalized strings, so chips could never show the user’s original capitalization.
+
+### Decision
+Introduce **`normalizeTopicForApi(raw)`** (hyphens/underscores → spaces, collapse whitespace, lowercase) for **`setTopic`** / **`fetchAnalysis`** only. Keep **`searchInput`** as the trimmed string the user submitted. Store **original** strings in **`localStorage`**; use **`normalizeRecentSearchDisplay`** only as a dedupe key—if the normalized form already exists, skip **`updateHistory`**. **`readRecentHistoryForDisplay`** returns stored originals while deduping by normalized key. **`lastSuccessfulDisplayRef`** restores the last display string after validation errors.
+
+### Implementation
+- **`frontend/app.js`**: **`normalizeTopicForApi`**, **`runSearch`**, **`updateHistory`**, **`readRecentHistoryForDisplay`**, **`handleTryAgainAfterValidation`**, **`lastSuccessfulDisplayRef`**.
+
+### Result
+- **`npm run build`** (**`frontend/`**): success.
