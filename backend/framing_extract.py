@@ -19,6 +19,44 @@ _JUNK_PROPER_LIKE = frozenset(
     }
 )
 
+_TITLE_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z]+)?")
+
+
+def _topic_tokens_min_len4(topic: str) -> set[str]:
+    """Topic-side tokens (4+ chars), excluding common stopwords so titles cannot match on e.g. 'with' alone."""
+    stop = _STOP_FIRST_WORD
+    out: set[str] = set()
+    for m in _TITLE_WORD_RE.finditer(topic or ""):
+        w = m.group(0).lower()
+        if len(w) < 4 or w in stop:
+            continue
+        out.add(w)
+    return out
+
+
+def _title_tokens(text: str) -> set[str]:
+    return {m.group(0).lower() for m in _TITLE_WORD_RE.finditer(text or "")}
+
+
+def _title_shares_topic_word(title: str, topic_tokens: set[str]) -> bool:
+    if not topic_tokens:
+        return False
+    return bool(_title_tokens(title) & topic_tokens)
+
+
+def _framing_article_sort_key(a: Any) -> tuple[int, float]:
+    rel = int(getattr(a, "relevance_score", None) or 0)
+    pub = getattr(a, "published_at", None)
+    if pub is None:
+        ts = float("-inf")
+    else:
+        try:
+            ts = float(pub.timestamp())
+        except (OSError, ValueError, AttributeError):
+            ts = float("-inf")
+    return (-rel, -ts)
+
+
 _STOP_FIRST_WORD = frozenset(
     {
         "the",
@@ -156,15 +194,24 @@ def get_framing_summary(articles: list[Any], topic: str, source: str) -> str:
     1) Prefer NewsAPI-style description (stored on Article) — clean, rarely truncated.
     2) Else first two content sentences after spam triple-filter.
     3) Else empty string (UI hides framing).
+
+    Only articles whose title shares at least one token (4+ chars) with the topic are eligible.
+    Eligible rows are sorted by relevance_score DESC, published_at DESC.
     """
-    _ = topic
     _ = source
 
     if not articles:
         return ""
 
-    sorted_articles = sorted(articles, key=lambda a: -int(getattr(a, "relevance_score", None) or 0))
-    top = sorted_articles[0]
+    topic_tokens = _topic_tokens_min_len4(topic)
+    if not topic_tokens:
+        return ""
+
+    eligible = [a for a in articles if _title_shares_topic_word(getattr(a, "title", None) or "", topic_tokens)]
+    if not eligible:
+        return ""
+
+    top = sorted(eligible, key=_framing_article_sort_key)[0]
 
     desc = clean_text(getattr(top, "description", None) or "")
     if desc and not _should_reject_sentence(desc):

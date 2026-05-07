@@ -745,3 +745,23 @@ Maintain an explicit **`CREDIBLE_DOMAINS`** list in **`backend/credible_domains.
 - **`PYTHONPATH=. python3 -m pytest backend/tests`**: **20 passed**.
 - **`npm run build`** in **`frontend/`**: success.
 - **`GET /analyze`** against **`127.0.0.1:8000`** returned **`success: true`** with non-empty **`selected_outlets`** for **`india diplomacy`**, **`trade war`**, and **`pakistan politics`** (port **8000** was already bound locally; verification used the running API).
+
+## [2026-05-07] - Remove credibility UI; gate framing summary on topic–title word overlap
+
+### Challenge
+Domains-based fetching removed numeric credibility scores, but the dashboard still showed “Credibility unrated” and related badges. Separately, outlet framing blurbs could come from the wrong article (e.g. Indian Express showing entertainment copy for **india relation with us**) because **`get_framing_summary`** always used the single highest **`relevance_score`** row without requiring the **title** to reflect the topic.
+
+### Investigation
+The API may still send **`credibility_score`** as **`null`**; the UI treated that as “unrated.” Framing used **`sorted(articles, key=-relevance_score)[0]`** only, so a high-score irrelevant headline could win.
+
+### Decision
+Drop all credibility display from **`frontend/app.js`**. For framing, require at least one shared **4+ character** token between the **topic** and **article title** (topic tokens skip common stopwords such as **`with`** so generic titles cannot match), then pick the best row by **`relevance_score` DESC, `published_at` DESC**; if nothing qualifies, return **`""`** so the UI omits the blurb.
+
+### Implementation
+- **`frontend/app.js`**: Removed **`credibility_score`** from **`normalizeOutlet`**, deleted **`credibilityIndicator`**, and removed the outlet-card credibility line under the outlet name.
+- **`backend/framing_extract.py`**: Added **`_topic_tokens_min_len4`** (with stopword filter), **`_title_shares_topic_word`**, **`_framing_article_sort_key`**; **`get_framing_summary`** filters **`eligible`** articles then sorts and summarizes as before.
+
+### Result
+- **`npm run build`** (**`frontend/`**): success.
+- **`PYTHONPATH=. python3 -m pytest backend/tests`**: **20 passed**.
+- Manual check: search **india relation with us** — no credibility copy on cards; Indian Express framing should align with titles containing topic words such as **india** / **relation** (not unrelated entertainment or Doomsday pieces unless they share those tokens).
