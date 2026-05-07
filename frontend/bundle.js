@@ -53880,8 +53880,27 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
     )) : null))
   );
 }
-function Header({ onStartAnalysis }) {
-  return /* @__PURE__ */ import_react36.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand-lockup" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand" }, "NewsLens"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "brand-tag" }, "Truth in headlines. Bias in framing.")), /* @__PURE__ */ import_react36.default.createElement("nav", null, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "active" }, "Dashboard"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#topics" }, "Topics"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#outlets" }, "Outlets"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#methodology" }, "Methodology")), /* @__PURE__ */ import_react36.default.createElement("button", { className: "cta", onClick: onStartAnalysis }, "Start Analysis"));
+function Header({ onStartAnalysis, onBrandClick }) {
+  return /* @__PURE__ */ import_react36.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand-lockup" }, /* @__PURE__ */ import_react36.default.createElement(
+    "button",
+    {
+      type: "button",
+      className: "brand",
+      onClick: onBrandClick,
+      "aria-label": "Go to NewsLens home",
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "8px",
+        border: "none",
+        background: "transparent",
+        padding: 0,
+        cursor: "pointer"
+      }
+    },
+    /* @__PURE__ */ import_react36.default.createElement("svg", { width: "28", height: "28", viewBox: "0 0 28 28", "aria-hidden": "true" }, /* @__PURE__ */ import_react36.default.createElement("defs", null, /* @__PURE__ */ import_react36.default.createElement("linearGradient", { id: "newslens-bias-gradient", x1: "0%", y1: "50%", x2: "100%", y2: "50%" }, /* @__PURE__ */ import_react36.default.createElement("stop", { offset: "0%", stopColor: "#3B82F6" }), /* @__PURE__ */ import_react36.default.createElement("stop", { offset: "50%", stopColor: "#6B7280" }), /* @__PURE__ */ import_react36.default.createElement("stop", { offset: "100%", stopColor: "#EF4444" }))), /* @__PURE__ */ import_react36.default.createElement("circle", { cx: "14", cy: "14", r: "13", fill: "none", stroke: "#1A1A2E", strokeWidth: "2" }), /* @__PURE__ */ import_react36.default.createElement("rect", { x: "6", y: "11.5", width: "16", height: "5", rx: "2.5", fill: "url(#newslens-bias-gradient)" })),
+    /* @__PURE__ */ import_react36.default.createElement("span", { style: { fontWeight: 700, fontSize: "inherit", lineHeight: 1 } }, /* @__PURE__ */ import_react36.default.createElement("span", { style: { color: "#1A1A2E" } }, "News"), /* @__PURE__ */ import_react36.default.createElement("span", { style: { color: "#3B82F6" } }, "Lens"))
+  ), /* @__PURE__ */ import_react36.default.createElement("p", { className: "brand-tag" }, "Truth in headlines. Bias in framing.")), /* @__PURE__ */ import_react36.default.createElement("nav", null, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "active" }, "Dashboard"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#topics" }, "Topics"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#outlets" }, "Outlets"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#methodology" }, "Methodology")), /* @__PURE__ */ import_react36.default.createElement("button", { className: "cta", onClick: onStartAnalysis }, "Start Analysis"));
 }
 function ResultsHeader({ topic, outlets, spectrumExtremes, onOpenReadAcross }) {
   const dist = (0, import_react36.useMemo)(() => outletBiasSpectrumPercentages(outlets), [outlets]);
@@ -54127,6 +54146,14 @@ function App() {
   const handleStartAnalysis = () => {
     focusSearchArea();
   };
+  const handleBrandClick = () => {
+    setSearchInput("");
+    setTopic("");
+    setSearchValidationError(null);
+    setCompareSelection([]);
+    setReadAcrossOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const handleTryAgainAfterValidation = () => {
     const display = lastSuccessfulDisplayRef.current;
     const prev = lastSuccessfulTopicRef.current;
@@ -54156,7 +54183,7 @@ function App() {
   };
   const exitComparison = () => setCompareSelection([]);
   const data = query.data;
-  return /* @__PURE__ */ import_react36.default.createElement("div", { className: "page" }, /* @__PURE__ */ import_react36.default.createElement(Header, { onStartAnalysis: handleStartAnalysis }), /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("div", { className: "page" }, /* @__PURE__ */ import_react36.default.createElement(Header, { onStartAnalysis: handleStartAnalysis, onBrandClick: handleBrandClick }), /* @__PURE__ */ import_react36.default.createElement(
     Hero,
     {
       searchInput,
