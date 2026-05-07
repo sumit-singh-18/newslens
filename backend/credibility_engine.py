@@ -16,7 +16,7 @@ OUTLET_DESCRIPTION_MAX_LEN = 300
 credible_tlds = [".com", ".org", ".net", ".co.uk", ".in", ".de", ".fr", ".au", ".ca", ".co.za", ".jp", ".br"]
 
 
-def compute_credibility_score(source: dict) -> int:
+def compute_credibility_score(source: dict, article: dict = None) -> int:
     score = 0
 
     # Signal 1: Has verified NewsAPI source ID (+40)
@@ -45,7 +45,7 @@ def compute_credibility_score(source: dict) -> int:
 
     # Signal 5: Description quality (+15)
     # Real outlets have clean factual descriptions
-    description = source.get("description", "") or ""
+    description = (article or {}).get("description", "") or ""
     if isinstance(description, str) and OUTLET_DESCRIPTION_MIN_LEN <= len(description) <= OUTLET_DESCRIPTION_MAX_LEN:
         score += 15
 
