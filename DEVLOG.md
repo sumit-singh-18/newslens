@@ -800,3 +800,25 @@ Introduce **`normalizeTopicForApi(raw)`** (hyphens/underscores → spaces, colla
 
 ### Result
 - **`npm run build`** (**`frontend/`**): success.
+
+
+## [2026-05-06] - Small UI coverage notes
+
+### What changed
+- **`frontend/app.js`**: Added a subtle pre-search note under the search bar: "Analyzes coverage from the last 30 days across verified credible outlets". It renders only before a topic is searched (`showPreSearchNote={!topic}`) and hides once results are loading/shown.
+- **`frontend/app.js`**: In **`InsufficientCoverageCard`** ("Not enough coverage"), added a second explanatory line: "Note: NewsLens covers current news only. Historical topics may not have recent coverage."
+
+### Verification
+- **`npm run build`** in **`frontend/`**: success.
+
+
+## [2026-05-06] - Search-area visual polish
+
+### What changed
+- **`frontend/app.js`**: Updated the pre-search note styling to lighter **text-xs** (`#9CA3AF`) with cleaner spacing (`padding-top: 8px`, `margin-bottom: 24px`).
+- **`frontend/app.js`**: Refined **Trending Topics** presentation: lighter uppercase label style, centered layout, max **4** chips, and softer curated chip visuals (rounded, gray border, white background, subtle hover).
+- **`frontend/app.js`**: Refined **Recent Searches** presentation: added top spacing, label with **🕐** icon using matching light label style, max **3** chips, and slightly smaller chip text.
+- **`frontend/app.js`**: Updated the empty-state helper text under search to lighter **text-sm** style (`#9CA3AF`) with `margin-top: 32px`.
+
+### Verification
+- **`npm run build`** in **`frontend/`**: success.

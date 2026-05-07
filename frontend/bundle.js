@@ -53674,7 +53674,7 @@ function DevelopingStoryBanner() {
   return /* @__PURE__ */ import_react36.default.createElement("div", { className: "developing-story-banner", role: "status" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-icon", "aria-hidden": true }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-dot" }), /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-ring" })), /* @__PURE__ */ import_react36.default.createElement("p", { className: "developing-story-copy" }, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Developing Story:"), " This topic has emerging coverage. Analysis will refine as more sources report."));
 }
 function InsufficientCoverageCard({ onTryBroaderSearch }) {
-  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card insufficient-coverage-card", "aria-labelledby": "insufficient-coverage-heading" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Coverage"), /* @__PURE__ */ import_react36.default.createElement("h2", { id: "insufficient-coverage-heading", className: "insufficient-coverage-title" }, "Not enough coverage"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "insufficient-coverage-body" }, "Few articles matched this topic in our current window. Try a shorter or broader query to surface more outlets."), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-broader-search", onClick: onTryBroaderSearch }, "Try a broader search"));
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card insufficient-coverage-card", "aria-labelledby": "insufficient-coverage-heading" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Coverage"), /* @__PURE__ */ import_react36.default.createElement("h2", { id: "insufficient-coverage-heading", className: "insufficient-coverage-title" }, "Not enough coverage"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "insufficient-coverage-body" }, "Few articles matched this topic in our current window. Try a shorter or broader query to surface more outlets."), /* @__PURE__ */ import_react36.default.createElement("p", { className: "insufficient-coverage-body" }, "Note: NewsLens covers current news only. Historical topics may not have recent coverage."), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-broader-search", onClick: onTryBroaderSearch }, "Try a broader search"));
 }
 function readAcrossReadKey(topic, source) {
   return `${READ_ACROSS_READ_PREFIX}:${topic}::${source}`;
@@ -53969,7 +53969,8 @@ function Hero({
   history,
   runSearch,
   trendingTopics,
-  trendingLoading
+  trendingLoading,
+  showPreSearchNote
 }) {
   return /* @__PURE__ */ import_react36.default.createElement("section", { className: "hero", id: "search-anchor" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "NewsLens editorial intelligence"), /* @__PURE__ */ import_react36.default.createElement("h1", null, "Read the same story through every bias line."), /* @__PURE__ */ import_react36.default.createElement("p", { className: "lede" }, "NewsLens maps truth signals, bias direction, and narrative framing so you can compare how outlets shape the same topic."), /* @__PURE__ */ import_react36.default.createElement("form", { className: "search-form", onSubmit }, /* @__PURE__ */ import_react36.default.createElement(
     "input",
@@ -53981,16 +53982,61 @@ function Hero({
       value: searchInput,
       onChange: onSearchInputChange
     }
-  ), /* @__PURE__ */ import_react36.default.createElement("button", { className: "search-btn", type: "submit" }, "Analyze")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label" }, "Trending topics"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row" }, trendingLoading ? Array.from({ length: 7 }).map((_, i) => /* @__PURE__ */ import_react36.default.createElement("span", { key: `trend-skel-${i}`, className: "suggestion-tag suggestion-tag-skeleton", "aria-hidden": true })) : trendingTopics.map((row) => /* @__PURE__ */ import_react36.default.createElement(
+  ), /* @__PURE__ */ import_react36.default.createElement("button", { className: "search-btn", type: "submit" }, "Analyze")), showPreSearchNote ? /* @__PURE__ */ import_react36.default.createElement(
+    "p",
+    {
+      className: "micro-muted",
+      style: { fontSize: "0.75rem", color: "#9CA3AF", textAlign: "center", paddingTop: 8, marginBottom: 24 }
+    },
+    "Analyzes coverage from the last 30 days across verified credible outlets"
+  ) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics", style: { textAlign: "center", marginBottom: 28 } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label", style: { fontSize: "0.75rem", letterSpacing: "0.08em", color: "#9CA3AF" } }, "TRENDING TOPICS"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row", style: { justifyContent: "center" } }, trendingLoading ? Array.from({ length: 4 }).map((_, i) => /* @__PURE__ */ import_react36.default.createElement("span", { key: `trend-skel-${i}`, className: "suggestion-tag suggestion-tag-skeleton", "aria-hidden": true })) : trendingTopics.slice(0, 4).map((row) => /* @__PURE__ */ import_react36.default.createElement(
     "button",
     {
       key: row.topic,
       type: "button",
       className: "suggestion-tag",
-      onClick: () => runSearch(row.topic)
+      onClick: () => runSearch(row.topic),
+      style: {
+        textTransform: "lowercase",
+        fontSize: "0.875rem",
+        padding: "0.375rem 1rem",
+        border: "1px solid #E5E7EB",
+        borderRadius: "9999px",
+        backgroundColor: "#FFFFFF",
+        color: "#374151"
+      },
+      onMouseEnter: (e) => {
+        e.currentTarget.style.backgroundColor = "#F9FAFB";
+      },
+      onMouseLeave: (e) => {
+        e.currentTarget.style.backgroundColor = "#FFFFFF";
+      }
     },
-    row.topic
-  )))), searchValidationError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { style: { color: "#b91c1c", fontSize: "0.88rem", margin: "0 0 8px" } }, searchValidationError), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onTryAgainValidation }, "Try again")) : null, isError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error", style: { margin: "0 0 8px" } }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onRetryFetch }, "Try again")) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics", style: { marginTop: "20px" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label" }, "Recent searches"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row" }, history.map((item) => /* @__PURE__ */ import_react36.default.createElement("button", { key: item, className: "history-chip", onClick: () => runSearch(item) }, item)))));
+    String(row.topic ?? "").toLowerCase()
+  )))), searchValidationError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { style: { color: "#b91c1c", fontSize: "0.88rem", margin: "0 0 8px" } }, searchValidationError), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onTryAgainValidation }, "Try again")) : null, isError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error", style: { margin: "0 0 8px" } }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onRetryFetch }, "Try again")) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics", style: { marginTop: "20px", textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label", style: { fontSize: "0.75rem", letterSpacing: "0.08em", color: "#9CA3AF" } }, "\u{1F550} RECENT SEARCHES"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row", style: { justifyContent: "center" } }, history.slice(0, 3).map((item) => /* @__PURE__ */ import_react36.default.createElement(
+    "button",
+    {
+      key: item,
+      className: "history-chip",
+      onClick: () => runSearch(item),
+      style: {
+        textTransform: "lowercase",
+        fontSize: "0.75rem",
+        padding: "0.375rem 1rem",
+        border: "1px solid #E5E7EB",
+        borderRadius: "9999px",
+        backgroundColor: "#FFFFFF",
+        color: "#374151"
+      },
+      onMouseEnter: (e) => {
+        e.currentTarget.style.backgroundColor = "#F9FAFB";
+      },
+      onMouseLeave: (e) => {
+        e.currentTarget.style.backgroundColor = "#FFFFFF";
+      }
+    },
+    String(item ?? "").toLowerCase()
+  )))));
 }
 function App() {
   const [searchInput, setSearchInput] = (0, import_react36.useState)("");
@@ -54125,9 +54171,10 @@ function App() {
       history,
       runSearch,
       trendingTopics: trendingQuery.data || [],
-      trendingLoading: trendingQuery.isLoading
+      trendingLoading: trendingQuery.isLoading,
+      showPreSearchNote: !topic
     }
-  ), !topic ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "empty-note" }, "Start with a topic to generate a full outlet comparison dashboard.") : null, query.isFetching ? /* @__PURE__ */ import_react36.default.createElement(LoadingSkeleton, null) : null, data ? /* @__PURE__ */ import_react36.default.createElement(ErrorBoundary, { key: topic }, /* @__PURE__ */ import_react36.default.createElement(
+  ), !topic ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "empty-note", style: { fontSize: "0.875rem", color: "#9CA3AF", marginTop: 32 } }, "Start with a topic to generate a full outlet comparison dashboard.") : null, query.isFetching ? /* @__PURE__ */ import_react36.default.createElement(LoadingSkeleton, null) : null, data ? /* @__PURE__ */ import_react36.default.createElement(ErrorBoundary, { key: topic }, /* @__PURE__ */ import_react36.default.createElement(
     AnalysisResults,
     {
       data,
