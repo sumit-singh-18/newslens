@@ -765,3 +765,21 @@ Drop all credibility display from **`frontend/app.js`**. For framing, require at
 - **`npm run build`** (**`frontend/`**): success.
 - **`PYTHONPATH=. python3 -m pytest backend/tests`**: **20 passed**.
 - Manual check: search **india relation with us** — no credibility copy on cards; Indian Express framing should align with titles containing topic words such as **india** / **relation** (not unrelated entertainment or Doomsday pieces unless they share those tokens).
+
+## [2026-05-07] - Pipeline pytest module + mandatory backend verification in self-review
+
+### Challenge
+The stack needed repeatable checks for fetch relevance, NLP persistence, framing quality, and **`/analyze`** JSON shape without relying on manual clicks every session.
+
+### Investigation
+Real NewsAPI and full HF stacks make tests slow and flaky in CI; the existing suite already used in-memory SQLite and **`TestClient`** patterns we could mirror.
+
+### Decision
+Add **`backend/tests/test_pipeline.py`** that mocks **`_fetch_everything_for_domains`** and **`NLPPipeline.analyze_batch`**, runs **`fetch_and_store_articles("trade war", …)`**, then asserts title/topic overlap, **`article_scores`** coverage, framing blacklist strings, and **`/analyze`** outlet fields. Keep **`clean_text`** coverage as a pure unit test. Document **`pytest backend/tests/ -q`** under **`.cursor/.rules/007-self-review.mdc` → Verification**.
+
+### Implementation
+- **`backend/tests/test_pipeline.py`**: five tests (fetch titles, scores rows, framing substrings, analyze completeness, **`clean_text`**).
+- **`.cursor/.rules/007-self-review.mdc`**: backend test command and “fix before reporting done” rule.
+
+### Result
+- **`PYTHONPATH=. python3 -m pytest backend/tests/ -q`**: all tests pass (including **25** total after adding the module).
