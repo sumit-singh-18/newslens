@@ -2203,6 +2203,57 @@ function MethodologyPage() {
         </div>
       </section>
 
+      <section className="methodology-section" aria-labelledby="m-spectrum-labels">
+        <h2 id="m-spectrum-labels" className="methodology-section-title">
+          What Left, Center, and Right Mean
+        </h2>
+        <div className="methodology-body">
+          <p>
+            <strong>LEFT-LEANING</strong> coverage tends to emphasize:
+          </p>
+          <ul>
+            <li>Social equity and systemic inequality</li>
+            <li>Government regulation as a solution</li>
+            <li>Climate urgency and environmental policy</li>
+            <li>Workers rights and labor protections</li>
+            <li>International cooperation and diplomacy</li>
+          </ul>
+          <p>
+            Examples: <strong>The Guardian</strong>, <strong>MSNBC</strong>, <strong>NPR</strong>
+          </p>
+          <p>
+            <strong>CENTER</strong> coverage tends to emphasize:
+          </p>
+          <ul>
+            <li>Facts and data over editorial framing</li>
+            <li>Multiple perspectives without strong opinion</li>
+            <li>Institutional and procedural reporting</li>
+            <li>Economic impacts without political framing</li>
+          </ul>
+          <p>
+            Examples: <strong>Reuters</strong>, <strong>Associated Press</strong>, <strong>BBC</strong>
+          </p>
+          <p>
+            <strong>RIGHT-LEANING</strong> coverage tends to emphasize:
+          </p>
+          <ul>
+            <li>Free market solutions over regulation</li>
+            <li>Individual rights and personal responsibility</li>
+            <li>National security and border policy</li>
+            <li>Skepticism of government intervention</li>
+            <li>Traditional values and institutions</li>
+          </ul>
+          <p>
+            Examples: <strong>Fox News</strong>, <strong>Wall Street Journal</strong>
+          </p>
+          <p>
+            <strong>These are framing tendencies, not absolute labels.</strong> Every outlet publishes across the spectrum
+            depending on the topic. Our scores reflect how a specific outlet covered a specific topic — not a permanent
+            political identity. A score can change topic to topic.
+          </p>
+        </div>
+      </section>
+
       <section className="methodology-section" aria-labelledby="m-outlets">
         <h2 id="m-outlets" className="methodology-section-title">
           How We Choose Outlets

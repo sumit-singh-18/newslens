@@ -863,3 +863,8 @@ All **`backend/tests`** pass (**23**). **`npm run build`** (**`frontend/`**) suc
 Added **`OutletsPage`** with **`CREDIBLE_SOURCE_TIERS`** in **`frontend/app.js`**, aligned to **`backend/credible_domains.py`** (same domains per tier; BBC shown once as **`bbc.com`** alongside **`bbc.co.uk`** in the allowlist). Hash **`#outlets`** renders the standalone directory (max-width **900px**), **`document.title`** **Our Sources — NewsLens**, navbar unchanged; **`Start Analysis`** clears **`#outlets`** → **`#dashboard`** like methodology. Renamed dashboard grid anchor **`id="outlets"`** → **`id="dashboard-outlets"`** so **`#outlets`** is only the sources page. Styles in **`styles.css`** for tier badges, responsive **3 / 2 / 1** grids, and outlet cards. **`npm run build`**: OK.
 
 
+## [2026-05-09] — Methodology: left / center / right framing guide
+
+**`frontend/app.js`** **`MethodologyPage`** (`#methodology`): added **What Left, Center, and Right Mean** below **How We Detect Bias** — bullets for left / center / right framing tendencies, example outlets, and a note that scores are topic-specific. **`npm run build`**: OK.
+
+
