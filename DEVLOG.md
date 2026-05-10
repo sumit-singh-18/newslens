@@ -868,3 +868,21 @@ Added **`OutletsPage`** with **`CREDIBLE_SOURCE_TIERS`** in **`frontend/app.js`*
 **`frontend/app.js`** **`MethodologyPage`** (`#methodology`): added **What Left, Center, and Right Mean** below **How We Detect Bias** — bullets for left / center / right framing tendencies, example outlets, and a note that scores are topic-specific. **`npm run build`**: OK.
 
 
+## [2026-05-09] — Phase 5: Production preparation (no deploy)
+
+### Backend
+- **`backend/main.py`**: **`ALLOWED_ORIGINS`** (comma-separated, default **`http://localhost:5173`**) drives CORS instead of **`CORS_ORIGINS`** + fixed dev list; **`DEBUG`** boolean from **`DEBUG`** env; **`DATABASE_URL`** constant mirrors env with default **`sqlite:///./newslens.db`**.
+- **`backend/database.py`**: Default SQLite URL aligned to **`sqlite:///./newslens.db`** when **`DATABASE_URL`** and **`DATABASE_PATH`** are unset.
+- **`backend/requirements.txt`**: Completed against **`pip freeze`** — added **`requests`**, **`anthropic`**, **`google-generativeai`** (NewsAPI remains **`httpx`** only; **`newsapi-python`** not used).
+- **`backend/Procfile`**: **`cd .. && uvicorn backend.main:app --host 0.0.0.0 --port $PORT`** so the app runs from the repo root (package-relative imports in **`main.py`** require **`backend.main:app`**, not bare **`main:app`**) with Render **Root Directory** set to **`backend`**.
+- **`backend/runtime.txt`**: **`python-3.11.0`**.
+
+### Frontend
+- **`frontend/app.js`**: **`API_BASE`** switches **`127.0.0.1:8000`** locally vs placeholder **`https://YOUR_RENDER_URL.onrender.com`** for production hosts; all **`fetch`** calls use **`API_BASE`**.
+- **`frontend/vercel.json`**: SPA rewrite **`/(.*)` → `/index.html`**.
+
+### Verification
+- **`pytest backend/tests`**: **23** passed.
+- **`npm run build`** (**`frontend/`**): success.
+
+

@@ -35,7 +35,10 @@ fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
 }).catch(() => {});
 // #endregion
 
-const API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://127.0.0.1:8000"
+    : "https://YOUR_RENDER_URL.onrender.com";
 const READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 const DEFAULT_SERIES_LABEL = "14d";
 
@@ -822,7 +825,7 @@ function framingPhrase(text) {
 }
 
 async function fetchAnalysis(topic) {
-  const response = await fetch(`${API_BASE_URL}/analyze?topic=${encodeURIComponent(topic)}`);
+  const response = await fetch(`${API_BASE}/analyze?topic=${encodeURIComponent(topic)}`);
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || "Failed to fetch analysis.");
@@ -836,7 +839,7 @@ async function fetchAnalysis(topic) {
 }
 
 async function fetchOutletProfile(outlet) {
-  const response = await fetch(`${API_BASE_URL}/outlet-profile?outlet=${encodeURIComponent(outlet)}`);
+  const response = await fetch(`${API_BASE}/outlet-profile?outlet=${encodeURIComponent(outlet)}`);
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || "Failed to load outlet profile.");
@@ -850,7 +853,7 @@ async function fetchOutletProfile(outlet) {
 
 async function fetchTopicTrend(topic, days = 7) {
   const response = await fetch(
-    `${API_BASE_URL}/topic-trend?topic=${encodeURIComponent(topic)}&days=${days}`
+    `${API_BASE}/topic-trend?topic=${encodeURIComponent(topic)}&days=${days}`
   );
   if (!response.ok) {
     const text = await response.text();
@@ -874,7 +877,7 @@ const DEFAULT_TODAYS_TOPICS = [
 
 async function fetchTodaysTopics() {
   try {
-    const response = await fetch(`${API_BASE_URL}/todays-topics`);
+    const response = await fetch(`${API_BASE}/todays-topics`);
     if (!response.ok) {
       const text = await response.text();
       throw new Error(text || "Failed to load today's topics.");

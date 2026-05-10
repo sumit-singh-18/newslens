@@ -22,17 +22,12 @@ from sqlalchemy.orm import Session
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
-# Browser dev servers (Vite/static on 5173). Append comma-separated URLs via CORS_ORIGINS for staging/production.
-_DEV_CORS_ORIGINS = [
-    "http://127.0.0.1:5173",
-    "http://localhost:5173",
-]
-_extra_cors = [
-    o.strip()
-    for o in (os.getenv("CORS_ORIGINS") or "").split(",")
-    if o.strip()
-]
-_CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./newslens.db")
+
+# Comma-separated frontend origins (e.g. Vite dev + Vercel). Default local Vite URL.
+_allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+_CORS_ALLOW_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
 
 from .bias_utils import (
     bias_distribution_from_outlets,
@@ -996,7 +991,7 @@ def health_check(db: Session = Depends(get_db)) -> HealthResponse:
         "data": {
             "service": "newslens-backend",
             "status": "ok",
-            "debug": os.getenv("DEBUG", "False"),
+            "debug": DEBUG,
         },
         "error": None,
     }

@@ -13,8 +13,10 @@ def _resolve_database_url() -> str:
     if database_url:
         return database_url
 
-    database_path = os.getenv("DATABASE_PATH", "./newslens.db")
-    return f"sqlite:///{database_path}"
+    database_path = os.getenv("DATABASE_PATH")
+    if database_path:
+        return f"sqlite:///{database_path}"
+    return "sqlite:///./newslens.db"
 
 
 DATABASE_URL = _resolve_database_url()
