@@ -52504,6 +52504,90 @@ function validateSearchTopicInput(raw) {
   }
   return { ok: true };
 }
+var CREDIBLE_SOURCE_TIERS = [
+  {
+    tier: 1,
+    badge: "TIER 1",
+    name: "Wire Services",
+    color: "#10B981",
+    description: "Primary sources. Highest factual reporting standards. No editorial slant.",
+    outlets: [
+      { name: "Reuters", domain: "reuters.com" },
+      { name: "AP", domain: "apnews.com" }
+    ]
+  },
+  {
+    tier: 2,
+    badge: "TIER 2",
+    name: "International Broadcasters",
+    color: "#3B82F6",
+    description: "Public and major international broadcasters with strong editorial standards and global reach.",
+    outlets: [
+      { name: "BBC", domain: "bbc.com" },
+      { name: "NPR", domain: "npr.org" },
+      { name: "DW", domain: "dw.com" },
+      { name: "France 24", domain: "france24.com" },
+      { name: "Al Jazeera", domain: "aljazeera.com" }
+    ]
+  },
+  {
+    tier: 3,
+    badge: "TIER 3",
+    name: "Major Newspapers",
+    color: "#8B5CF6",
+    description: "Established print institutions with strong sourcing, editorial boards, and accountability standards.",
+    outlets: [
+      { name: "The Guardian", domain: "theguardian.com" },
+      { name: "Washington Post", domain: "washingtonpost.com" },
+      { name: "NYT", domain: "nytimes.com" },
+      { name: "WSJ", domain: "wsj.com" },
+      { name: "FT", domain: "ft.com" },
+      { name: "The Atlantic", domain: "theatlantic.com" },
+      { name: "Foreign Policy", domain: "foreignpolicy.com" },
+      { name: "Economist", domain: "economist.com" }
+    ]
+  },
+  {
+    tier: 4,
+    badge: "TIER 4",
+    name: "Cable & Digital News",
+    color: "#F59E0B",
+    description: "Major cable and digital outlets with significant reach. Known editorial perspectives \u2014 included deliberately to show the full bias spectrum.",
+    outlets: [
+      { name: "CNN", domain: "cnn.com" },
+      { name: "Fox News", domain: "foxnews.com" },
+      { name: "MSNBC", domain: "msnbc.com" },
+      { name: "Bloomberg", domain: "bloomberg.com" },
+      { name: "Politico", domain: "politico.com" },
+      { name: "Axios", domain: "axios.com" },
+      { name: "The Hill", domain: "thehill.com" },
+      { name: "NBC News", domain: "nbcnews.com" },
+      { name: "CBS News", domain: "cbsnews.com" },
+      { name: "ABC News", domain: "abcnews.go.com" },
+      { name: "Newsweek", domain: "newsweek.com" },
+      { name: "Time", domain: "time.com" },
+      { name: "USA Today", domain: "usatoday.com" }
+    ]
+  },
+  {
+    tier: 5,
+    badge: "TIER 5",
+    name: "International Credible Outlets",
+    color: "#EC4899",
+    description: "Credible regional and international outlets providing perspectives beyond Western mainstream media.",
+    outlets: [
+      { name: "Indian Express", domain: "indianexpress.com" },
+      { name: "The Hindu", domain: "thehindu.com" },
+      { name: "NDTV", domain: "ndtv.com" },
+      { name: "Hindustan Times", domain: "hindustantimes.com" },
+      { name: "Dawn", domain: "dawn.com" },
+      { name: "SCMP", domain: "scmp.com" },
+      { name: "Japan Times", domain: "japantimes.co.jp" },
+      { name: "Haaretz", domain: "haaretz.com" },
+      { name: "The Conversation", domain: "theconversation.com" }
+    ]
+  }
+];
 function navActiveFromHash(hash) {
   const h = (hash || "").toLowerCase();
   if (h === "#methodology") return "methodology";
@@ -53323,7 +53407,7 @@ function OutletCard({ outlet, outletColorMap, compareSelected, onCompareClick })
 function OutletGrid({ outlets, outletColorMap, compareSelection, onCompareClick }) {
   const selectedSet = new Set(compareSelection);
   const list = Array.isArray(outlets) ? outlets : [];
-  return /* @__PURE__ */ import_react36.default.createElement("section", { id: "outlets", className: "outlets-grid" }, list.map((outlet) => /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("section", { id: "dashboard-outlets", className: "outlets-grid" }, list.map((outlet) => /* @__PURE__ */ import_react36.default.createElement(
     OutletCard,
     {
       key: outlet.source,
@@ -53851,6 +53935,18 @@ function ReadAcrossBiasOverlay({ topic, outlets, onClose }) {
 function Header({ onStartAnalysis, activeNav }) {
   return /* @__PURE__ */ import_react36.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand-lockup" }, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "brand brand-home-link", style: { textDecoration: "none", color: "inherit" } }, "NewsLens"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "brand-tag" }, "Truth in headlines. Bias in framing.")), /* @__PURE__ */ import_react36.default.createElement("nav", null, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: activeNav === "dashboard" ? "active" : void 0 }, "Dashboard"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#topics", className: activeNav === "topics" ? "active" : void 0 }, "Topics"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#outlets", className: activeNav === "outlets" ? "active" : void 0 }, "Outlets"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#methodology", className: activeNav === "methodology" ? "active" : void 0 }, "Methodology")), /* @__PURE__ */ import_react36.default.createElement("button", { className: "cta", onClick: onStartAnalysis }, "Start Analysis"));
 }
+function OutletsPage() {
+  return /* @__PURE__ */ import_react36.default.createElement("main", { className: "outlets-directory-page", "aria-labelledby": "verified-outlets-h1" }, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "methodology-back" }, "\u2190 Dashboard"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow", style: { marginBottom: 12 } }, "Our Sources \u2014 NewsLens"), /* @__PURE__ */ import_react36.default.createElement("h1", { id: "verified-outlets-h1", className: "outlets-directory-title" }, "Verified Credible Outlets"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "outlets-directory-lede" }, "NewsLens only analyzes coverage from these verified outlets, organized by credibility tier. We believe transparency about our sources is as important as the analysis itself."), CREDIBLE_SOURCE_TIERS.map((tier) => /* @__PURE__ */ import_react36.default.createElement("section", { key: tier.tier, className: "source-tier-section", "aria-labelledby": `tier-${tier.tier}-heading` }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "source-tier-head" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "source-tier-badge", style: { "--tier-accent": tier.color } }, tier.badge), /* @__PURE__ */ import_react36.default.createElement("h2", { id: `tier-${tier.tier}-heading`, className: "source-tier-name" }, tier.name)), /* @__PURE__ */ import_react36.default.createElement("p", { className: "source-tier-desc" }, tier.description), /* @__PURE__ */ import_react36.default.createElement("div", { className: "source-tier-grid" }, tier.outlets.map((o) => /* @__PURE__ */ import_react36.default.createElement(
+    "article",
+    {
+      key: `${tier.tier}-${o.domain}`,
+      className: "source-outlet-card",
+      style: { "--tier-accent": tier.color }
+    },
+    /* @__PURE__ */ import_react36.default.createElement("p", { className: "source-outlet-name" }, o.name),
+    /* @__PURE__ */ import_react36.default.createElement("p", { className: "source-outlet-domain" }, o.domain)
+  ))))), /* @__PURE__ */ import_react36.default.createElement("p", { className: "outlets-directory-footnote" }, "Don't see an outlet you trust? Our source list is regularly reviewed. Inclusion criteria: established editorial standards, factual reporting record, and significant readership."));
+}
 function MethodologyPage() {
   return /* @__PURE__ */ import_react36.default.createElement("main", { className: "methodology-page", "aria-labelledby": "methodology-doc-h1" }, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "methodology-back" }, "\u2190 Dashboard"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow", style: { marginBottom: 12 } }, "Transparency"), /* @__PURE__ */ import_react36.default.createElement("h1", { id: "methodology-doc-h1", className: "methodology-doc-title" }, "Methodology"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "methodology-lede" }, "NewsLens compares how major outlets cover the same story. Here is how we analyze sentiment and bias, which sources we include, how we derive data-driven coverage insights, and what you should not expect from this tool."), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-bias" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-bias", className: "methodology-section-title" }, "How We Detect Bias"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "We score ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "sentiment"), " using the Hugging Face model", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "cardiffnlp/twitter-roberta-base-sentiment"), "\u2014the same RoBERTa family many researchers use for social text. It classifies tone toward positive, neutral, or negative so we can summarize emotional framing alongside politics."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bias scoring"), " does not rely on a single dial. We combine outputs from our bias-oriented ML signals with ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "keyword framing analysis"), ": the language patterns outlets tend to use when they lean left versus right on an issue. Left-leaning framing often surfaces through vocabulary that emphasizes systemic critique, collective action, or progressive policy frames; right-leaning framing often shows up in language that stresses tradition, national security, market-led solutions, or conservative policy cues. No keyword list is perfect\u2014but pairing statistical models with explicit linguistic cues helps catch framing that scalar scores alone can miss."), /* @__PURE__ */ import_react36.default.createElement("p", null, "Each article receives a position on a continuous scale. We aggregate those scores ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "per outlet"), " ", "so you see an outlet-level bias estimate rather than a single cherry-picked headline. The headline shown in cards may be illustrative; the score reflects the batch of articles we analyzed for your topic."), /* @__PURE__ */ import_react36.default.createElement("p", null, "The ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "bias axis"), " is normalized to a ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.0\u20131.0"), " scale for readability:", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.0"), " indicates relatively left-leaning coverage for that topic, ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.5"), " sits near the center, and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "1.0"), " indicates relatively right-leaning coverage. Treat these numbers as comparative signals across outlets on the same story\u2014not as absolute moral judgments about a publication."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-outlets" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-outlets", className: "methodology-section-title" }, "How We Choose Outlets"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "We maintain a ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "tiered allowlist of credible domains"), ". Only articles from those domains can appear in NewsLens. That keeps comparisons grounded in organizations that operate with editorial processes and broad public visibility\u2014the kind of outlets where bias analysis is most meaningful."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 1 \u2014 Wire services:"), " Associated Press and Reuters-style wire origins (e.g.", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "AP"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Reuters"), ") provide baseline factual filing many others republish."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 2 \u2014 International broadcasters:"), " Outlets such as ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "BBC"), ",", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "NPR"), ", and comparable global broadcasters offer sustained reporting with public-service or international mandates."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 3 \u2014 Major newspapers:"), " Large national and international papers\u2014examples include", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The Guardian"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The New York Times"), ", and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The Wall Street Journal"), "\u2014carry investigative depth and consistent politics desks."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 4 \u2014 Cable and digital news:"), " Major cable and digital brands such as", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "CNN"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Fox News"), ", and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bloomberg"), " represent high-reach U.S. and global audiences with distinct editorial identities."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 5 \u2014 International credible outlets:"), " We also include respected regional leaders\u2014e.g.", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Indian Express"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Dawn"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "South China Morning Post"), ", and similar titles\u2014so international angles are not invisible when they publish in English on a global topic."), /* @__PURE__ */ import_react36.default.createElement("p", null, "For any topic, we surface the ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "top five outlets by article volume"), " drawn exclusively from this verified list (subject to who actually published on your query in our fetch window). We cap visibility so the dashboard stays readable and so each bar in our charts reflects enough text to score reliably."), /* @__PURE__ */ import_react36.default.createElement("p", null, "We deliberately do ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "not"), " scrape the entire web. Bias comparison only works when outlets have meaningful reach and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "editorial accountability"), ": corrections policies, bylines, and reputational stakes. Narrowing to verified domains trades completeness for a fairer apples-to-apples contrast."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-insights" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-insights", className: "methodology-section-title" }, "What The Numbers Reveal"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "The ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "What The Numbers Reveal"), " card summarizes patterns already computed for your search: which outlet sounds most emotionally charged or most neutral, how far apart the ideological extremes sit on the bias axis, whether left- and right-leaning outlets diverge on average sentiment, who published the most articles, and which substantive terms recur across framing summaries."), /* @__PURE__ */ import_react36.default.createElement("p", null, "These insights are ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "deterministic summaries of scores and text we already analyzed"), ". No extra API calls and no generative editorial layer\u2014so the card stays fast, reproducible, and independent of LLM quotas."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-limits" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-limits", className: "methodology-section-title" }, "What We Don't Do (And Why)"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Time window:"), " We currently pull articles from roughly the ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "last 30 days"), ", a constraint driven by how we integrate with NewsAPI on the free tier and by our focus on live news rather than archival history."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bias is imperfect:"), " No model or keyword list captures the full nuance of editorial choices. Scores are heuristics\u2014useful for comparison, dangerous if treated as ground truth about a person's character or an outlet's worth."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Coverage is bounded:"), " We intentionally limit sources to our allowlist\u2014today roughly", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "35 verified credible domains"), ". If your favorite niche blog is missing, that is by design, not an oversight of quality everywhere else on the web."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Thin data:"), " If only a handful of articles match your topic, averages can swing with one outlier headline. Treat low-volume topics as directional, not definitive."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Interpretation:"), " Charts and insight lines summarize model outputs and heuristics. Use them as a", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "starting point for curiosity"), ", not a final verdict\u2014especially on sensitive stories."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-why" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-why", className: "methodology-section-title" }, "Why We Built This"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "Media literacy matters. Most people still get news primarily from one habitual source\u2014and algorithms reinforce that comfort. When you read the ", /* @__PURE__ */ import_react36.default.createElement("em", null, "same story"), " refracted through several bias lenses, you practice the habit of asking who is included, who is quoted, and which causes get named. We built NewsLens because we believe ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "transparency about how we analyze"), " is as important as the charts themselves: when you know the limits of the model, you can use it without being used by it."))));
 }
@@ -53995,7 +54091,9 @@ function App() {
   const [compareSelection, setCompareSelection] = (0, import_react36.useState)([]);
   const [readAcrossOpen, setReadAcrossOpen] = (0, import_react36.useState)(false);
   const [routeHash, setRouteHash] = (0, import_react36.useState)(() => window.location.hash || "");
-  const isMethodologyPage = (routeHash || "").toLowerCase() === "#methodology";
+  const hashLower = (routeHash || "").toLowerCase();
+  const isMethodologyPage = hashLower === "#methodology";
+  const isOutletsPage = hashLower === "#outlets";
   const query = useQuery({
     queryKey: ["analysis", topic],
     queryFn: () => fetchAnalysis(topic),
@@ -54105,28 +54203,32 @@ function App() {
     if (isMethodologyPage) {
       document.title = "Methodology \u2014 NewsLens";
       window.scrollTo(0, 0);
+    } else if (isOutletsPage) {
+      document.title = "Our Sources \u2014 NewsLens";
+      window.scrollTo(0, 0);
     } else {
       document.title = "NewsLens Dashboard";
     }
-  }, [isMethodologyPage]);
+  }, [isMethodologyPage, isOutletsPage]);
   (0, import_react36.useEffect)(() => {
-    if (isMethodologyPage) return;
+    if (isMethodologyPage || isOutletsPage) return;
     const id = (routeHash || "").replace(/^#/, "");
-    if (!id || id === "methodology" || id === "dashboard") return;
+    if (!id || id === "methodology" || id === "dashboard" || id === "outlets") return;
     const t = window.setTimeout(() => {
       document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 120);
     return () => window.clearTimeout(t);
-  }, [routeHash, isMethodologyPage, topic, data]);
+  }, [routeHash, isMethodologyPage, isOutletsPage, topic, data]);
   const handleStartAnalysis = () => {
-    if ((window.location.hash || "").toLowerCase() === "#methodology") {
+    const h = (window.location.hash || "").toLowerCase();
+    if (h === "#methodology" || h === "#outlets") {
       window.location.hash = "#dashboard";
       window.setTimeout(() => focusSearchArea(), 100);
       return;
     }
     focusSearchArea();
   };
-  return /* @__PURE__ */ import_react36.default.createElement("div", { className: "page" }, /* @__PURE__ */ import_react36.default.createElement(Header, { onStartAnalysis: handleStartAnalysis, activeNav: navActiveFromHash(routeHash) }), isMethodologyPage ? /* @__PURE__ */ import_react36.default.createElement(MethodologyPage, null) : /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, null, /* @__PURE__ */ import_react36.default.createElement(
+  return /* @__PURE__ */ import_react36.default.createElement("div", { className: "page" }, /* @__PURE__ */ import_react36.default.createElement(Header, { onStartAnalysis: handleStartAnalysis, activeNav: navActiveFromHash(routeHash) }), isMethodologyPage ? /* @__PURE__ */ import_react36.default.createElement(MethodologyPage, null) : isOutletsPage ? /* @__PURE__ */ import_react36.default.createElement(OutletsPage, null) : /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, null, /* @__PURE__ */ import_react36.default.createElement(
     Hero,
     {
       searchInput,
