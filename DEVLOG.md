@@ -833,3 +833,8 @@ The backend now exposes **`GET /todays-topics`**. It pulls US English top headli
 On the frontend, the hero section asks for **`/todays-topics` on load**, shows **four skeleton chips** while that request is in flight, and retitles the strip **“IN THE NEWS TODAY.”** Chips behave like before: one click fills the search box and runs analyze. We removed the **Recent Searches** block entirely (no more history chips or localStorage-backed list there), and **`npm run build`** passes.
 
 
+## [2026-05-09] — Methodology page you can actually read
+
+The navbar had always linked **`#methodology`**, but that only scrolled to the Missing Angle card after you already had results—there was nowhere to explain how NewsLens works before you searched. We introduced a **hash-routed** standalone page at **`#methodology`**: five substantive sections (bias detection with RoBERTa sentiment + framing keywords, tiered outlet selection and top-five-by-volume rule, Gemini Missing Angle, honest limitations, and why we built this), max-width **720px** essay layout, **← Dashboard** back link, shared **topbar**, and **`document.title`** set to **Methodology — NewsLens**. The in-dashboard Missing Angle block is now anchored as **`#missing-angle`** so it doesn’t collide with the full Methodology route. **`npm run build`** succeeds.
+
+

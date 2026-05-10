@@ -36,6 +36,77 @@ body {
   padding: 24px 24px 96px;
 }
 
+/* Standalone Methodology essay page (#methodology) */
+.methodology-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 0 80px;
+}
+
+.methodology-back {
+  display: inline-block;
+  margin-bottom: 28px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.methodology-back:hover {
+  color: var(--ink);
+}
+
+.methodology-doc-title {
+  margin: 0 0 16px;
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.methodology-lede {
+  margin: 0 0 40px;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.methodology-section {
+  margin-bottom: 40px;
+}
+
+.methodology-section-title {
+  margin: 0 0 14px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.methodology-body {
+  font-size: 0.97rem;
+  line-height: 1.7;
+  color: #374151;
+}
+
+.methodology-body p {
+  margin: 0 0 14px;
+}
+
+.methodology-body p:last-child {
+  margin-bottom: 0;
+}
+
+.methodology-body strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.brand-home-link:hover {
+  opacity: 0.85;
+}
+
 .topbar {
   display: flex;
   align-items: center;

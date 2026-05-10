@@ -66,6 +66,15 @@ function validateSearchTopicInput(raw) {
   return { ok: true };
 }
 
+/** Navbar highlight from location hash (hash routing for methodology page). */
+function navActiveFromHash(hash) {
+  const h = (hash || "").toLowerCase();
+  if (h === "#methodology") return "methodology";
+  if (h === "#topics") return "topics";
+  if (h === "#outlets") return "outlets";
+  return "dashboard";
+}
+
 const COVERAGE_STATUS = {
   HIGH: "high",
   DEVELOPING: "developing",
@@ -1657,7 +1666,7 @@ function TopicTrendChart({ topic, outlets, outletColorMap }) {
 function MissingAngleCard({ missingAngle }) {
   const { body, reasoning } = missingAnglePresentationalCopy(missingAngle);
   return (
-    <section id="methodology" className="missing-angle card">
+    <section id="missing-angle" className="missing-angle card">
       <p className="eyebrow">Editorial insight</p>
       <h2>Missing Angle</h2>
       <p>{body}</p>
@@ -2018,25 +2027,202 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
   );
 }
 
-function Header({ onStartAnalysis }) {
+function Header({ onStartAnalysis, activeNav }) {
   return (
     <header className="topbar">
       <div className="brand-lockup">
-        <div className="brand">NewsLens</div>
+        <a href="#dashboard" className="brand brand-home-link" style={{ textDecoration: "none", color: "inherit" }}>
+          NewsLens
+        </a>
         <p className="brand-tag">Truth in headlines. Bias in framing.</p>
       </div>
       <nav>
-        <a href="#dashboard" className="active">
+        <a href="#dashboard" className={activeNav === "dashboard" ? "active" : undefined}>
           Dashboard
         </a>
-        <a href="#topics">Topics</a>
-        <a href="#outlets">Outlets</a>
-        <a href="#methodology">Methodology</a>
+        <a href="#topics" className={activeNav === "topics" ? "active" : undefined}>
+          Topics
+        </a>
+        <a href="#outlets" className={activeNav === "outlets" ? "active" : undefined}>
+          Outlets
+        </a>
+        <a href="#methodology" className={activeNav === "methodology" ? "active" : undefined}>
+          Methodology
+        </a>
       </nav>
       <button className="cta" onClick={onStartAnalysis}>
         Start Analysis
       </button>
     </header>
+  );
+}
+
+function MethodologyPage() {
+  return (
+    <main className="methodology-page" aria-labelledby="methodology-doc-h1">
+      <a href="#dashboard" className="methodology-back">
+        ← Dashboard
+      </a>
+      <p className="eyebrow" style={{ marginBottom: 12 }}>
+        Transparency
+      </p>
+      <h1 id="methodology-doc-h1" className="methodology-doc-title">
+        Methodology
+      </h1>
+      <p className="methodology-lede">
+        NewsLens compares how major outlets cover the same story. Here is how we analyze sentiment and bias, which
+        sources we include, how we use AI for the Missing Angle, and what you should not expect from this tool.
+      </p>
+
+      <section className="methodology-section" aria-labelledby="m-bias">
+        <h2 id="m-bias" className="methodology-section-title">
+          How We Detect Bias
+        </h2>
+        <div className="methodology-body">
+          <p>
+            We score <strong>sentiment</strong> using the Hugging Face model{" "}
+            <strong>cardiffnlp/twitter-roberta-base-sentiment</strong>—the same RoBERTa family many researchers use for
+            social text. It classifies tone toward positive, neutral, or negative so we can summarize emotional framing
+            alongside politics.
+          </p>
+          <p>
+            <strong>Bias scoring</strong> does not rely on a single dial. We combine outputs from our bias-oriented ML
+            signals with <strong>keyword framing analysis</strong>: the language patterns outlets tend to use when they
+            lean left versus right on an issue. Left-leaning framing often surfaces through vocabulary that emphasizes
+            systemic critique, collective action, or progressive policy frames; right-leaning framing often shows up in
+            language that stresses tradition, national security, market-led solutions, or conservative policy cues. No
+            keyword list is perfect—but pairing statistical models with explicit linguistic cues helps catch framing that
+            scalar scores alone can miss.
+          </p>
+          <p>
+            Each article receives a position on a continuous scale. We aggregate those scores <strong>per outlet</strong>{" "}
+            so you see an outlet-level bias estimate rather than a single cherry-picked headline. The headline shown in
+            cards may be illustrative; the score reflects the batch of articles we analyzed for your topic.
+          </p>
+          <p>
+            The <strong>bias axis</strong> is normalized to a <strong>0.0–1.0</strong> scale for readability:{" "}
+            <strong>0.0</strong> indicates relatively left-leaning coverage for that topic, <strong>0.5</strong> sits near
+            the center, and <strong>1.0</strong> indicates relatively right-leaning coverage. Treat these numbers as
+            comparative signals across outlets on the same story—not as absolute moral judgments about a publication.
+          </p>
+        </div>
+      </section>
+
+      <section className="methodology-section" aria-labelledby="m-outlets">
+        <h2 id="m-outlets" className="methodology-section-title">
+          How We Choose Outlets
+        </h2>
+        <div className="methodology-body">
+          <p>
+            We maintain a <strong>tiered allowlist of credible domains</strong>. Only articles from those domains can
+            appear in NewsLens. That keeps comparisons grounded in organizations that operate with editorial processes and
+            broad public visibility—the kind of outlets where bias analysis is most meaningful.
+          </p>
+          <p>
+            <strong>Tier 1 — Wire services:</strong> Associated Press and Reuters-style wire origins (e.g.{" "}
+            <strong>AP</strong>, <strong>Reuters</strong>) provide baseline factual filing many others republish.
+          </p>
+          <p>
+            <strong>Tier 2 — International broadcasters:</strong> Outlets such as <strong>BBC</strong>,{" "}
+            <strong>NPR</strong>, and comparable global broadcasters offer sustained reporting with public-service or
+            international mandates.
+          </p>
+          <p>
+            <strong>Tier 3 — Major newspapers:</strong> Large national and international papers—examples include{" "}
+            <strong>The Guardian</strong>, <strong>The New York Times</strong>, and <strong>The Wall Street Journal</strong>
+            —carry investigative depth and consistent politics desks.
+          </p>
+          <p>
+            <strong>Tier 4 — Cable and digital news:</strong> Major cable and digital brands such as{" "}
+            <strong>CNN</strong>, <strong>Fox News</strong>, and <strong>Bloomberg</strong> represent high-reach U.S. and
+            global audiences with distinct editorial identities.
+          </p>
+          <p>
+            <strong>Tier 5 — International credible outlets:</strong> We also include respected regional leaders—e.g.{" "}
+            <strong>Indian Express</strong>, <strong>Dawn</strong>, <strong>South China Morning Post</strong>, and similar
+            titles—so international angles are not invisible when they publish in English on a global topic.
+          </p>
+          <p>
+            For any topic, we surface the <strong>top five outlets by article volume</strong> drawn exclusively from this
+            verified list (subject to who actually published on your query in our fetch window). We cap visibility so the
+            dashboard stays readable and so each bar in our charts reflects enough text to score reliably.
+          </p>
+          <p>
+            We deliberately do <strong>not</strong> scrape the entire web. Bias comparison only works when outlets have
+            meaningful reach and <strong>editorial accountability</strong>: corrections policies, bylines, and reputational
+            stakes. Narrowing to verified domains trades completeness for a fairer apples-to-apples contrast.
+          </p>
+        </div>
+      </section>
+
+      <section className="methodology-section" aria-labelledby="m-missing">
+        <h2 id="m-missing" className="methodology-section-title">
+          What Is the Missing Angle?
+        </h2>
+        <div className="methodology-body">
+          <p>
+            After we analyze sentiment and bias across outlets, we compile article summaries and structured signals and
+            send them to a large language model—<strong>Google Gemini</strong> (with sensible fallbacks when quotas bite).
+          </p>
+          <p>
+            We ask a single adversarial question: <strong>What perspective did all of these outlets collectively fail to
+            foreground?</strong> The answer might highlight affected communities who never received a direct quote,
+            historical parallels readers were not given, international viewpoints left out of the U.S.-centric frame, or
+            systemic drivers reduced to one-off events.
+          </p>
+          <p>
+            The Missing Angle is <strong>explicitly labeled as AI-generated editorial analysis</strong>. It is not a fact
+            checker and not a prediction—it is a structured prompt to widen your lens after you have seen the spectrum.
+          </p>
+        </div>
+      </section>
+
+      <section className="methodology-section" aria-labelledby="m-limits">
+        <h2 id="m-limits" className="methodology-section-title">
+          What We Don&apos;t Do (And Why)
+        </h2>
+        <div className="methodology-body">
+          <p>
+            <strong>Time window:</strong> We currently pull articles from roughly the <strong>last 30 days</strong>, a
+            constraint driven by how we integrate with NewsAPI on the free tier and by our focus on live news rather than
+            archival history.
+          </p>
+          <p>
+            <strong>Bias is imperfect:</strong> No model or keyword list captures the full nuance of editorial choices.
+            Scores are heuristics—useful for comparison, dangerous if treated as ground truth about a person&apos;s
+            character or an outlet&apos;s worth.
+          </p>
+          <p>
+            <strong>Coverage is bounded:</strong> We intentionally limit sources to our allowlist—today roughly{" "}
+            <strong>35 verified credible domains</strong>. If your favorite niche blog is missing, that is by design, not
+            an oversight of quality everywhere else on the web.
+          </p>
+          <p>
+            <strong>Thin data:</strong> If only a handful of articles match your topic, averages can swing with one outlier
+            headline. Treat low-volume topics as directional, not definitive.
+          </p>
+          <p>
+            <strong>AI caveats:</strong> Missing Angle prose is machine-generated synthesis. Use it as a{" "}
+            <strong>starting prompt for curiosity</strong>, not a final verdict—especially on sensitive stories.
+          </p>
+        </div>
+      </section>
+
+      <section className="methodology-section" aria-labelledby="m-why">
+        <h2 id="m-why" className="methodology-section-title">
+          Why We Built This
+        </h2>
+        <div className="methodology-body">
+          <p>
+            Media literacy matters. Most people still get news primarily from one habitual source—and algorithms reinforce
+            that comfort. When you read the <em>same story</em> refracted through several bias lenses, you practice the
+            habit of asking who is included, who is quoted, and which causes get named. We built NewsLens because we
+            believe <strong>transparency about how we analyze</strong> is as important as the charts themselves: when you
+            know the limits of the model, you can use it without being used by it.
+          </p>
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -2280,6 +2466,8 @@ function App() {
   const [searchValidationError, setSearchValidationError] = useState(null);
   const [compareSelection, setCompareSelection] = useState([]);
   const [readAcrossOpen, setReadAcrossOpen] = useState(false);
+  const [routeHash, setRouteHash] = useState(() => window.location.hash || "");
+  const isMethodologyPage = (routeHash || "").toLowerCase() === "#methodology";
 
   const query = useQuery({
     queryKey: ["analysis", topic],
@@ -2361,10 +2549,6 @@ function App() {
     });
   };
 
-  const handleStartAnalysis = () => {
-    focusSearchArea();
-  };
-
   const handleTryAgainAfterValidation = () => {
     const display = lastSuccessfulDisplayRef.current;
     const prev = lastSuccessfulTopicRef.current;
@@ -2399,54 +2583,94 @@ function App() {
 
   const data = query.data;
 
+  useEffect(() => {
+    const onHashChange = () => setRouteHash(window.location.hash || "");
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (isMethodologyPage) {
+      document.title = "Methodology — NewsLens";
+      window.scrollTo(0, 0);
+    } else {
+      document.title = "NewsLens Dashboard";
+    }
+  }, [isMethodologyPage]);
+
+  useEffect(() => {
+    if (isMethodologyPage) return;
+    const id = (routeHash || "").replace(/^#/, "");
+    if (!id || id === "methodology" || id === "dashboard") return;
+    const t = window.setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [routeHash, isMethodologyPage, topic, data]);
+
+  const handleStartAnalysis = () => {
+    if ((window.location.hash || "").toLowerCase() === "#methodology") {
+      window.location.hash = "#dashboard";
+      window.setTimeout(() => focusSearchArea(), 100);
+      return;
+    }
+    focusSearchArea();
+  };
+
   return (
     <div className="page">
-      <Header onStartAnalysis={handleStartAnalysis} />
-      <Hero
-        searchInput={searchInput}
-        onSearchInputChange={onSearchInputChange}
-        onSubmit={onSubmit}
-        searchRef={searchRef}
-        searchValidationError={searchValidationError}
-        isError={query.isError}
-        error={query.error}
-        onRetryFetch={() => query.refetch()}
-        onTryAgainValidation={handleTryAgainAfterValidation}
-        runSearch={runSearch}
-        todaysTopics={todaysTopicsQuery.data ?? []}
-        todaysTopicsLoading={todaysTopicsQuery.isLoading}
-        showPreSearchNote={!topic}
-      />
-
-      {!topic ? (
-        <p className="empty-note" style={{ fontSize: "0.875rem", color: "#9CA3AF", marginTop: 32 }}>
-          Start with a topic to generate a full outlet comparison dashboard.
-        </p>
-      ) : null}
-      {query.isFetching ? <LoadingSkeleton /> : null}
-
-      {data ? (
-        <ErrorBoundary key={topic}>
-          <AnalysisResults
-            data={data}
-            compareSelection={compareSelection}
-            onCompareClick={handleCompareClick}
-            onExitComparison={exitComparison}
-            onOpenReadAcross={() => setReadAcrossOpen(true)}
-            spectrumFetching={query.isFetching}
-            onTryBroaderSearch={handleTryBroaderSearch}
-            onSearchTopic={runSearch}
+      <Header onStartAnalysis={handleStartAnalysis} activeNav={navActiveFromHash(routeHash)} />
+      {isMethodologyPage ? (
+        <MethodologyPage />
+      ) : (
+        <>
+          <Hero
+            searchInput={searchInput}
+            onSearchInputChange={onSearchInputChange}
+            onSubmit={onSubmit}
+            searchRef={searchRef}
+            searchValidationError={searchValidationError}
+            isError={query.isError}
+            error={query.error}
+            onRetryFetch={() => query.refetch()}
+            onTryAgainValidation={handleTryAgainAfterValidation}
+            runSearch={runSearch}
+            todaysTopics={todaysTopicsQuery.data ?? []}
+            todaysTopicsLoading={todaysTopicsQuery.isLoading}
+            showPreSearchNote={!topic}
           />
-        </ErrorBoundary>
-      ) : null}
-      {readAcrossOpen && data ? (
-        <ReadAcrossBiasOverlay
-          topic={data.topic || ""}
-          outlets={data.outlets || []}
-          missingAngle={data.missing_angle}
-          onClose={() => setReadAcrossOpen(false)}
-        />
-      ) : null}
+
+          {!topic ? (
+            <p className="empty-note" style={{ fontSize: "0.875rem", color: "#9CA3AF", marginTop: 32 }}>
+              Start with a topic to generate a full outlet comparison dashboard.
+            </p>
+          ) : null}
+          {query.isFetching ? <LoadingSkeleton /> : null}
+
+          {data ? (
+            <ErrorBoundary key={topic}>
+              <AnalysisResults
+                data={data}
+                compareSelection={compareSelection}
+                onCompareClick={handleCompareClick}
+                onExitComparison={exitComparison}
+                onOpenReadAcross={() => setReadAcrossOpen(true)}
+                spectrumFetching={query.isFetching}
+                onTryBroaderSearch={handleTryBroaderSearch}
+                onSearchTopic={runSearch}
+              />
+            </ErrorBoundary>
+          ) : null}
+          {readAcrossOpen && data ? (
+            <ReadAcrossBiasOverlay
+              topic={data.topic || ""}
+              outlets={data.outlets || []}
+              missingAngle={data.missing_angle}
+              onClose={() => setReadAcrossOpen(false)}
+            />
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
