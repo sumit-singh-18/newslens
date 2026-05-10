@@ -52480,7 +52480,6 @@ fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
 }).catch(() => {
 });
 var API_BASE_URL = window.NEWSLENS_API_BASE_URL || "http://127.0.0.1:8000";
-var HISTORY_KEY = "newslens-search-history";
 var READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 var DEFAULT_SERIES_LABEL = "14d";
 function normalizeRecentSearchDisplay(raw) {
@@ -52494,26 +52493,6 @@ function normalizeTopicForApi(raw) {
   s2 = s2.replace(/[-_]+/g, " ");
   s2 = s2.replace(/\s+/g, " ").trim();
   return s2.toLowerCase();
-}
-function readRecentHistoryForDisplay() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-    if (!Array.isArray(parsed)) return [];
-    const seen = /* @__PURE__ */ new Set();
-    const out = [];
-    for (const item of parsed) {
-      const label = normalizeRecentSearchDisplay(item);
-      if (!label) continue;
-      if (seen.has(label)) continue;
-      seen.add(label);
-      const display = String(item ?? "").trim();
-      out.push(display || item);
-      if (out.length >= 5) break;
-    }
-    return out;
-  } catch {
-    return [];
-  }
 }
 function validateSearchTopicInput(raw) {
   const t = String(raw ?? "").trim();
@@ -53036,25 +53015,6 @@ var biasBadgeClass = (label) => {
   if (bucket === "right") return "badge red-bg";
   return "badge gray-bg";
 };
-function updateHistory(term) {
-  const raw = String(term ?? "").trim();
-  if (!raw) return;
-  const norm = normalizeRecentSearchDisplay(term);
-  if (!norm) return;
-  const prev = (() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  })();
-  for (const x2 of prev) {
-    if (normalizeRecentSearchDisplay(x2) === norm) return;
-  }
-  const next = [raw, ...prev].slice(0, 5);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-}
 function roundThreeTo100(floats) {
   const f = floats.map((x2) => Math.floor(x2));
   let rem = 100 - f[0] - f[1] - f[2];
@@ -53190,21 +53150,37 @@ async function fetchTopicTrend(topic, days = 7) {
   }
   return payload.data;
 }
-async function fetchTrendingTopics() {
-  const response = await fetch(`${API_BASE_URL}/trending-topics`);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Failed to load trending topics.");
+var DEFAULT_TODAYS_TOPICS = [
+  "trade war",
+  "climate change",
+  "AI regulation",
+  "Gaza ceasefire",
+  "Federal Reserve",
+  "Ukraine war"
+];
+async function fetchTodaysTopics() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/todays-topics`);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || "Failed to load today's topics.");
+    }
+    const payload = await response.json();
+    if (!payload.success || !payload.data) {
+      return [...DEFAULT_TODAYS_TOPICS];
+    }
+    const raw = payload.data.topics;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return [...DEFAULT_TODAYS_TOPICS];
+    }
+    const topics = raw.map((t) => typeof t === "string" ? t.trim() : String(t ?? "").trim()).filter(Boolean);
+    if (!topics.length) {
+      return [...DEFAULT_TODAYS_TOPICS];
+    }
+    return topics.slice(0, 6);
+  } catch {
+    return [...DEFAULT_TODAYS_TOPICS];
   }
-  const payload = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error || "Trending topics request failed.");
-  }
-  const topics = payload.data && Array.isArray(payload.data.topics) ? payload.data.topics : [];
-  return topics.map((row) => ({
-    topic: typeof row.topic === "string" ? row.topic : String(row.topic ?? ""),
-    count: typeof row.count === "number" ? row.count : Number(row.count) || 0
-  }));
 }
 function extremOutlets(outlets) {
   const list = Array.isArray(outlets) ? outlets : [];
@@ -53966,10 +53942,9 @@ function Hero({
   error,
   onRetryFetch,
   onTryAgainValidation,
-  history,
   runSearch,
-  trendingTopics,
-  trendingLoading,
+  todaysTopics,
+  todaysTopicsLoading,
   showPreSearchNote
 }) {
   return /* @__PURE__ */ import_react36.default.createElement("section", { className: "hero", id: "search-anchor" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "NewsLens editorial intelligence"), /* @__PURE__ */ import_react36.default.createElement("h1", null, "Read the same story through every bias line."), /* @__PURE__ */ import_react36.default.createElement("p", { className: "lede" }, "NewsLens maps truth signals, bias direction, and narrative framing so you can compare how outlets shape the same topic."), /* @__PURE__ */ import_react36.default.createElement("form", { className: "search-form", onSubmit }, /* @__PURE__ */ import_react36.default.createElement(
@@ -53989,13 +53964,13 @@ function Hero({
       style: { fontSize: "0.75rem", color: "#9CA3AF", textAlign: "center", paddingTop: 8, marginBottom: 24 }
     },
     "Analyzes coverage from the last 30 days across verified credible outlets"
-  ) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics", style: { textAlign: "center", marginBottom: 28 } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label", style: { fontSize: "0.75rem", letterSpacing: "0.08em", color: "#9CA3AF" } }, "TRENDING TOPICS"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row", style: { justifyContent: "center" } }, trendingLoading ? Array.from({ length: 4 }).map((_, i) => /* @__PURE__ */ import_react36.default.createElement("span", { key: `trend-skel-${i}`, className: "suggestion-tag suggestion-tag-skeleton", "aria-hidden": true })) : trendingTopics.slice(0, 4).map((row) => /* @__PURE__ */ import_react36.default.createElement(
+  ) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics", style: { textAlign: "center", marginBottom: 28 } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label", style: { fontSize: "0.75rem", letterSpacing: "0.08em", color: "#9CA3AF" } }, "IN THE NEWS TODAY"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics-row", style: { justifyContent: "center" } }, todaysTopicsLoading ? Array.from({ length: 4 }).map((_, i) => /* @__PURE__ */ import_react36.default.createElement("span", { key: `today-skel-${i}`, className: "suggestion-tag suggestion-tag-skeleton", "aria-hidden": true })) : todaysTopics.slice(0, 6).map((topicLabel) => /* @__PURE__ */ import_react36.default.createElement(
     "button",
     {
-      key: row.topic,
+      key: topicLabel,
       type: "button",
       className: "suggestion-tag",
-      onClick: () => runSearch(row.topic),
+      onClick: () => runSearch(topicLabel),
       style: {
         textTransform: "lowercase",
         fontSize: "0.875rem",
@@ -54012,36 +53987,12 @@ function Hero({
         e.currentTarget.style.backgroundColor = "#FFFFFF";
       }
     },
-    String(row.topic ?? "").toLowerCase()
-  )))), searchValidationError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { style: { color: "#b91c1c", fontSize: "0.88rem", margin: "0 0 8px" } }, searchValidationError), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onTryAgainValidation }, "Try again")) : null, isError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error", style: { margin: "0 0 8px" } }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onRetryFetch }, "Try again")) : null, /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggested-topics", style: { marginTop: "20px", textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggested-topics-label", style: { fontSize: "0.75rem", letterSpacing: "0.08em", color: "#9CA3AF" } }, "\u{1F550} RECENT SEARCHES"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "history-row", style: { justifyContent: "center" } }, history.slice(0, 3).map((item) => /* @__PURE__ */ import_react36.default.createElement(
-    "button",
-    {
-      key: item,
-      className: "history-chip",
-      onClick: () => runSearch(item),
-      style: {
-        textTransform: "lowercase",
-        fontSize: "0.75rem",
-        padding: "0.375rem 1rem",
-        border: "1px solid #E5E7EB",
-        borderRadius: "9999px",
-        backgroundColor: "#FFFFFF",
-        color: "#374151"
-      },
-      onMouseEnter: (e) => {
-        e.currentTarget.style.backgroundColor = "#F9FAFB";
-      },
-      onMouseLeave: (e) => {
-        e.currentTarget.style.backgroundColor = "#FFFFFF";
-      }
-    },
-    String(item ?? "").toLowerCase()
-  )))));
+    String(topicLabel ?? "").toLowerCase()
+  )))), searchValidationError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { style: { color: "#b91c1c", fontSize: "0.88rem", margin: "0 0 8px" } }, searchValidationError), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onTryAgainValidation }, "Try again")) : null, isError ? /* @__PURE__ */ import_react36.default.createElement("div", { style: { marginTop: 12, textAlign: "center" } }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "inline-error", style: { margin: "0 0 8px" } }, "Could not load analysis: ", error?.message != null ? String(error.message) : String(error)), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "history-chip", onClick: onRetryFetch }, "Try again")) : null);
 }
 function App() {
   const [searchInput, setSearchInput] = (0, import_react36.useState)("");
   const [topic, setTopic] = (0, import_react36.useState)("");
-  const [history, setHistory] = (0, import_react36.useState)(() => readRecentHistoryForDisplay());
   const searchRef = (0, import_react36.useRef)(null);
   const lastSuccessfulTopicRef = (0, import_react36.useRef)("");
   const lastSuccessfulDisplayRef = (0, import_react36.useRef)("");
@@ -54055,15 +54006,12 @@ function App() {
     placeholderData: keepPreviousData,
     retry: 1
   });
-  const trendingQuery = useQuery({
-    queryKey: ["trending-topics"],
-    queryFn: fetchTrendingTopics,
-    staleTime: 6e4,
+  const todaysTopicsQuery = useQuery({
+    queryKey: ["todays-topics"],
+    queryFn: fetchTodaysTopics,
+    staleTime: 60 * 60 * 1e3,
     retry: 1
   });
-  (0, import_react36.useEffect)(() => {
-    setHistory(readRecentHistoryForDisplay());
-  }, []);
   (0, import_react36.useEffect)(() => {
     if (query.isSuccess && topic) {
       lastSuccessfulTopicRef.current = topic;
@@ -54096,8 +54044,6 @@ function App() {
     setSearchValidationError(null);
     setTopic(forApi);
     setSearchInput(raw);
-    updateHistory(raw);
-    setHistory(readRecentHistoryForDisplay());
     setCompareSelection([]);
   };
   const onSubmit = (event) => {
@@ -54168,10 +54114,9 @@ function App() {
       error: query.error,
       onRetryFetch: () => query.refetch(),
       onTryAgainValidation: handleTryAgainAfterValidation,
-      history,
       runSearch,
-      trendingTopics: trendingQuery.data || [],
-      trendingLoading: trendingQuery.isLoading,
+      todaysTopics: todaysTopicsQuery.data ?? [],
+      todaysTopicsLoading: todaysTopicsQuery.isLoading,
       showPreSearchNote: !topic
     }
   ), !topic ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "empty-note", style: { fontSize: "0.875rem", color: "#9CA3AF", marginTop: 32 } }, "Start with a topic to generate a full outlet comparison dashboard.") : null, query.isFetching ? /* @__PURE__ */ import_react36.default.createElement(LoadingSkeleton, null) : null, data ? /* @__PURE__ */ import_react36.default.createElement(ErrorBoundary, { key: topic }, /* @__PURE__ */ import_react36.default.createElement(
