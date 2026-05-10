@@ -66,6 +66,97 @@ function validateSearchTopicInput(raw) {
   return { ok: true };
 }
 
+/** Tier + outlet metadata aligned with `backend/credible_domains.py` (domain allowlist). */
+const CREDIBLE_SOURCE_TIERS = [
+  {
+    tier: 1,
+    badge: "TIER 1",
+    name: "Wire Services",
+    color: "#10B981",
+    description:
+      "Primary sources. Highest factual reporting standards. No editorial slant.",
+    outlets: [
+      { name: "Reuters", domain: "reuters.com" },
+      { name: "AP", domain: "apnews.com" },
+    ],
+  },
+  {
+    tier: 2,
+    badge: "TIER 2",
+    name: "International Broadcasters",
+    color: "#3B82F6",
+    description:
+      "Public and major international broadcasters with strong editorial standards and global reach.",
+    outlets: [
+      { name: "BBC", domain: "bbc.com" },
+      { name: "NPR", domain: "npr.org" },
+      { name: "DW", domain: "dw.com" },
+      { name: "France 24", domain: "france24.com" },
+      { name: "Al Jazeera", domain: "aljazeera.com" },
+    ],
+  },
+  {
+    tier: 3,
+    badge: "TIER 3",
+    name: "Major Newspapers",
+    color: "#8B5CF6",
+    description:
+      "Established print institutions with strong sourcing, editorial boards, and accountability standards.",
+    outlets: [
+      { name: "The Guardian", domain: "theguardian.com" },
+      { name: "Washington Post", domain: "washingtonpost.com" },
+      { name: "NYT", domain: "nytimes.com" },
+      { name: "WSJ", domain: "wsj.com" },
+      { name: "FT", domain: "ft.com" },
+      { name: "The Atlantic", domain: "theatlantic.com" },
+      { name: "Foreign Policy", domain: "foreignpolicy.com" },
+      { name: "Economist", domain: "economist.com" },
+    ],
+  },
+  {
+    tier: 4,
+    badge: "TIER 4",
+    name: "Cable & Digital News",
+    color: "#F59E0B",
+    description:
+      "Major cable and digital outlets with significant reach. Known editorial perspectives — included deliberately to show the full bias spectrum.",
+    outlets: [
+      { name: "CNN", domain: "cnn.com" },
+      { name: "Fox News", domain: "foxnews.com" },
+      { name: "MSNBC", domain: "msnbc.com" },
+      { name: "Bloomberg", domain: "bloomberg.com" },
+      { name: "Politico", domain: "politico.com" },
+      { name: "Axios", domain: "axios.com" },
+      { name: "The Hill", domain: "thehill.com" },
+      { name: "NBC News", domain: "nbcnews.com" },
+      { name: "CBS News", domain: "cbsnews.com" },
+      { name: "ABC News", domain: "abcnews.go.com" },
+      { name: "Newsweek", domain: "newsweek.com" },
+      { name: "Time", domain: "time.com" },
+      { name: "USA Today", domain: "usatoday.com" },
+    ],
+  },
+  {
+    tier: 5,
+    badge: "TIER 5",
+    name: "International Credible Outlets",
+    color: "#EC4899",
+    description:
+      "Credible regional and international outlets providing perspectives beyond Western mainstream media.",
+    outlets: [
+      { name: "Indian Express", domain: "indianexpress.com" },
+      { name: "The Hindu", domain: "thehindu.com" },
+      { name: "NDTV", domain: "ndtv.com" },
+      { name: "Hindustan Times", domain: "hindustantimes.com" },
+      { name: "Dawn", domain: "dawn.com" },
+      { name: "SCMP", domain: "scmp.com" },
+      { name: "Japan Times", domain: "japantimes.co.jp" },
+      { name: "Haaretz", domain: "haaretz.com" },
+      { name: "The Conversation", domain: "theconversation.com" },
+    ],
+  },
+];
+
 /** Navbar highlight from location hash (hash routing for methodology page). */
 function navActiveFromHash(hash) {
   const h = (hash || "").toLowerCase();
@@ -1120,7 +1211,7 @@ function OutletGrid({ outlets, outletColorMap, compareSelection, onCompareClick 
   const selectedSet = new Set(compareSelection);
   const list = Array.isArray(outlets) ? outlets : [];
   return (
-    <section id="outlets" className="outlets-grid">
+    <section id="dashboard-outlets" className="outlets-grid">
       {list.map((outlet) => (
         <OutletCard
           key={outlet.source}
@@ -2010,6 +2101,57 @@ function Header({ onStartAnalysis, activeNav }) {
   );
 }
 
+function OutletsPage() {
+  return (
+    <main className="outlets-directory-page" aria-labelledby="verified-outlets-h1">
+      <a href="#dashboard" className="methodology-back">
+        ← Dashboard
+      </a>
+      <p className="eyebrow" style={{ marginBottom: 12 }}>
+        Our Sources — NewsLens
+      </p>
+      <h1 id="verified-outlets-h1" className="outlets-directory-title">
+        Verified Credible Outlets
+      </h1>
+      <p className="outlets-directory-lede">
+        NewsLens only analyzes coverage from these verified outlets, organized by credibility tier. We believe transparency
+        about our sources is as important as the analysis itself.
+      </p>
+
+      {CREDIBLE_SOURCE_TIERS.map((tier) => (
+        <section key={tier.tier} className="source-tier-section" aria-labelledby={`tier-${tier.tier}-heading`}>
+          <div className="source-tier-head">
+            <span className="source-tier-badge" style={{ "--tier-accent": tier.color }}>
+              {tier.badge}
+            </span>
+            <h2 id={`tier-${tier.tier}-heading`} className="source-tier-name">
+              {tier.name}
+            </h2>
+          </div>
+          <p className="source-tier-desc">{tier.description}</p>
+          <div className="source-tier-grid">
+            {tier.outlets.map((o) => (
+              <article
+                key={`${tier.tier}-${o.domain}`}
+                className="source-outlet-card"
+                style={{ "--tier-accent": tier.color }}
+              >
+                <p className="source-outlet-name">{o.name}</p>
+                <p className="source-outlet-domain">{o.domain}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <p className="outlets-directory-footnote">
+        Don&apos;t see an outlet you trust? Our source list is regularly reviewed. Inclusion criteria: established editorial
+        standards, factual reporting record, and significant readership.
+      </p>
+    </main>
+  );
+}
+
 function MethodologyPage() {
   return (
     <main className="methodology-page" aria-labelledby="methodology-doc-h1">
@@ -2416,7 +2558,9 @@ function App() {
   const [compareSelection, setCompareSelection] = useState([]);
   const [readAcrossOpen, setReadAcrossOpen] = useState(false);
   const [routeHash, setRouteHash] = useState(() => window.location.hash || "");
-  const isMethodologyPage = (routeHash || "").toLowerCase() === "#methodology";
+  const hashLower = (routeHash || "").toLowerCase();
+  const isMethodologyPage = hashLower === "#methodology";
+  const isOutletsPage = hashLower === "#outlets";
 
   const query = useQuery({
     queryKey: ["analysis", topic],
@@ -2542,23 +2686,27 @@ function App() {
     if (isMethodologyPage) {
       document.title = "Methodology — NewsLens";
       window.scrollTo(0, 0);
+    } else if (isOutletsPage) {
+      document.title = "Our Sources — NewsLens";
+      window.scrollTo(0, 0);
     } else {
       document.title = "NewsLens Dashboard";
     }
-  }, [isMethodologyPage]);
+  }, [isMethodologyPage, isOutletsPage]);
 
   useEffect(() => {
-    if (isMethodologyPage) return;
+    if (isMethodologyPage || isOutletsPage) return;
     const id = (routeHash || "").replace(/^#/, "");
-    if (!id || id === "methodology" || id === "dashboard") return;
+    if (!id || id === "methodology" || id === "dashboard" || id === "outlets") return;
     const t = window.setTimeout(() => {
       document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 120);
     return () => window.clearTimeout(t);
-  }, [routeHash, isMethodologyPage, topic, data]);
+  }, [routeHash, isMethodologyPage, isOutletsPage, topic, data]);
 
   const handleStartAnalysis = () => {
-    if ((window.location.hash || "").toLowerCase() === "#methodology") {
+    const h = (window.location.hash || "").toLowerCase();
+    if (h === "#methodology" || h === "#outlets") {
       window.location.hash = "#dashboard";
       window.setTimeout(() => focusSearchArea(), 100);
       return;
@@ -2571,6 +2719,8 @@ function App() {
       <Header onStartAnalysis={handleStartAnalysis} activeNav={navActiveFromHash(routeHash)} />
       {isMethodologyPage ? (
         <MethodologyPage />
+      ) : isOutletsPage ? (
+        <OutletsPage />
       ) : (
         <>
           <Hero

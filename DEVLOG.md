@@ -858,3 +858,8 @@ Drop generative editorial synthesis from the dashboard path. Replace it with **p
 All **`backend/tests`** pass (**23**). **`npm run build`** (**`frontend/`**) succeeds. The dashboard no longer blocks on Gemini; insight lines reflect real numbers from the analysis envelope only.
 
 
+## [2026-05-09] — Outlets directory page (`#outlets`)
+
+Added **`OutletsPage`** with **`CREDIBLE_SOURCE_TIERS`** in **`frontend/app.js`**, aligned to **`backend/credible_domains.py`** (same domains per tier; BBC shown once as **`bbc.com`** alongside **`bbc.co.uk`** in the allowlist). Hash **`#outlets`** renders the standalone directory (max-width **900px**), **`document.title`** **Our Sources — NewsLens**, navbar unchanged; **`Start Analysis`** clears **`#outlets`** → **`#dashboard`** like methodology. Renamed dashboard grid anchor **`id="outlets"`** → **`id="dashboard-outlets"`** so **`#outlets`** is only the sources page. Styles in **`styles.css`** for tier badges, responsive **3 / 2 / 1** grids, and outlet cards. **`npm run build`**: OK.
+
+

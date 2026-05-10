@@ -43,6 +43,129 @@ body {
   padding: 0 0 80px;
 }
 
+/* Verified sources directory (#outlets) */
+.outlets-directory-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 0 80px;
+}
+
+.outlets-directory-title {
+  margin: 0 0 16px;
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.outlets-directory-lede {
+  margin: 0 0 36px;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.source-tier-section {
+  margin-bottom: 40px;
+}
+
+.source-tier-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.source-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--tier-accent, #64748b);
+  color: var(--tier-accent, #64748b);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.source-tier-name {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.source-tier-desc {
+  margin: 0 0 18px;
+  font-size: 0.97rem;
+  line-height: 1.65;
+  color: #475569;
+}
+
+.source-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .source-tier-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .source-tier-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.source-outlet-card {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--card-bg);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-left: 4px solid var(--tier-accent, #64748b);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(20px) saturate(160%);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.source-outlet-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 36px rgba(31, 38, 135, 0.11);
+}
+
+.source-outlet-name {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.source-outlet-domain {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.outlets-directory-footnote {
+  margin: 48px 0 0;
+  padding-top: 24px;
+  border-top: 1px solid rgba(226, 232, 240, 0.95);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: #64748b;
+}
+
 .methodology-back {
   display: inline-block;
   margin-bottom: 28px;
