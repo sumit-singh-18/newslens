@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 import os
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 import random
@@ -33,11 +34,15 @@ _extra_cors = [
 ]
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
-from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
+from .bias_utils import (
+    bias_distribution_from_outlets,
+    bias_label_from_axis,
+    bias_spectrum_bucket,
+    extrem_bias_outlets,
+)
 from .credible_domains import CREDIBLE_DOMAINS
 from .database import Article, ArticleScore, TopicAnalysis, create_tables, get_db, normalize_topic
 from .framing_extract import clean_text, get_framing_summary
-from .llm_analyzer import LLMAnalyzer
 from .news_fetcher import (
     MIN_RELEVANCE_SCORE,
     NewsFetcherError,
@@ -110,6 +115,273 @@ def _coverage_confidence_status(article_count: int) -> str:
     if article_count >= 5:
         return "developing"
     return "insufficient"
+
+
+_COVERAGE_INSIGHT_EXTRA_STOPWORDS = frozenset(
+    {
+        "their",
+        "there",
+        "these",
+        "those",
+        "which",
+        "while",
+        "where",
+        "being",
+        "after",
+        "before",
+        "through",
+        "during",
+        "about",
+        "under",
+        "other",
+        "such",
+        "some",
+        "many",
+        "much",
+        "more",
+        "most",
+        "less",
+        "also",
+        "into",
+        "than",
+        "then",
+        "them",
+        "said",
+        "says",
+        "report",
+        "reports",
+        "according",
+        "coverage",
+        "article",
+        "articles",
+        "story",
+        "stories",
+        "news",
+        "media",
+        "sources",
+        "source",
+        "president",
+        "government",
+        "official",
+        "officials",
+        "people",
+        "public",
+        "country",
+        "countries",
+        "state",
+        "states",
+        "national",
+        "international",
+    }
+)
+
+
+def _outlet_emotional_intensity_score(o: dict) -> float | None:
+    """Align with frontend: explicit emotional_intensity or |avg_sentiment| scaled to 0–10."""
+    raw = o.get("emotional_intensity")
+    if raw is not None:
+        try:
+            v = float(raw)
+            if math.isfinite(v):
+                return float(round(min(10.0, max(0.0, v)), 4))
+        except (TypeError, ValueError):
+            pass
+    avg = o.get("avg_sentiment_score")
+    if avg is None:
+        return None
+    try:
+        a = float(avg)
+        if not math.isfinite(a):
+            return None
+        return float(round(min(10.0, abs(a) * 10.0), 4))
+    except (TypeError, ValueError):
+        return None
+
+
+def _topic_tokens_for_filter(topic: str | None) -> set[str]:
+    if not topic or not str(topic).strip():
+        return set()
+    return {
+        m.group(0).lower()
+        for m in re.finditer(r"[A-Za-z]{3,}", str(topic))
+    }
+
+
+def generate_coverage_insights(outlets: list[dict], topic: str | None = None) -> list[dict]:
+    """
+    Derive data-driven insights from /analyze outlet payloads (no extra I/O).
+    Returns [] when fewer than two outlets have analyzed articles.
+    """
+    if not outlets:
+        return []
+
+    active = []
+    for o in outlets:
+        if not isinstance(o, dict):
+            continue
+        ac = int(o.get("article_count") or 0)
+        if ac <= 0:
+            continue
+        src = o.get("source")
+        if src is None or str(src).strip() == "":
+            continue
+        active.append(o)
+
+    if len(active) < 2:
+        return []
+
+    insights: list[dict] = []
+    topic_words = _topic_tokens_for_filter(topic)
+    stopwords = _TODAYS_TOPICS_STOPWORDS | _COVERAGE_INSIGHT_EXTRA_STOPWORDS
+
+    # 1–2: emotional intensity extremes (same metric as frontend fallback)
+    ei_rows: list[tuple[float, str]] = []
+    for o in active:
+        ei = _outlet_emotional_intensity_score(o)
+        if ei is None:
+            continue
+        ei_rows.append((ei, str(o["source"])))
+    if ei_rows:
+        max_ei = max(r[0] for r in ei_rows)
+        min_ei = min(r[0] for r in ei_rows)
+        hi = min((r for r in ei_rows if r[0] == max_ei), key=lambda x: x[1])
+        lo = min((r for r in ei_rows if r[0] == min_ei), key=lambda x: x[1])
+        insights.append(
+            {
+                "kind": "most_charged",
+                "outlet": hi[1],
+                "score": round(hi[0], 1),
+                "label": "most emotionally charged coverage",
+            }
+        )
+        insights.append(
+            {
+                "kind": "most_neutral",
+                "outlet": lo[1],
+                "score": round(lo[0], 1),
+                "label": "most measured coverage",
+            }
+        )
+
+    # 3: framing / bias gap between ideological extremes
+    left_name, right_name = extrem_bias_outlets(outlets)
+    scored_bias: list[tuple[float, str]] = []
+    for o in active:
+        bs = o.get("avg_bias_score")
+        if bs is None:
+            continue
+        try:
+            b = float(bs)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(b):
+            continue
+        scored_bias.append((b, str(o["source"])))
+    if scored_bias and left_name and right_name and left_name != right_name:
+        lo_o = next((x for x in scored_bias if x[1] == left_name), None)
+        hi_o = next((x for x in scored_bias if x[1] == right_name), None)
+        if lo_o and hi_o:
+            gap = round(abs(float(hi_o[0]) - float(lo_o[0])), 2)
+            if gap > 0:
+                insights.append(
+                    {
+                        "kind": "framing_gap",
+                        "outlet_a": left_name,
+                        "outlet_b": right_name,
+                        "gap": gap,
+                        "label": "largest perspective divide",
+                    }
+                )
+
+    # 4: sentiment split (left- vs right-leaning dominant bias labels)
+    left_scores: list[float] = []
+    right_scores: list[float] = []
+    for o in active:
+        bucket = bias_spectrum_bucket(o.get("dominant_bias_label"))
+        if bucket != "left" and bucket != "right":
+            continue
+        ss = o.get("avg_sentiment_score")
+        if ss is None:
+            continue
+        try:
+            v = float(ss)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(v):
+            continue
+        if bucket == "left":
+            left_scores.append(v)
+        else:
+            right_scores.append(v)
+    if left_scores and right_scores:
+        left_avg = sum(left_scores) / len(left_scores)
+        right_avg = sum(right_scores) / len(right_scores)
+        delta = abs(left_avg - right_avg)
+        if delta >= 0.06:
+            if right_avg > left_avg:
+                split_label = "right-leaning outlets more positive"
+            else:
+                split_label = "left-leaning outlets more positive"
+            insights.append(
+                {
+                    "kind": "sentiment_split",
+                    "left_avg": round(left_avg, 2),
+                    "right_avg": round(right_avg, 2),
+                    "label": split_label,
+                }
+            )
+
+    # 5: article volume leader
+    counts: list[tuple[int, str]] = []
+    for o in active:
+        counts.append((int(o.get("article_count") or 0), str(o["source"])))
+    if counts:
+        top_n = max(c[0] for c in counts)
+        leader = min((c for c in counts if c[0] == top_n), key=lambda x: x[1])
+        insights.append(
+            {
+                "kind": "volume_leader",
+                "outlet": leader[1],
+                "count": leader[0],
+                "label": "most articles published on this topic",
+            }
+        )
+
+    # 6: consensus keyword across all non-empty framing summaries
+    framing_texts: list[str] = []
+    for o in active:
+        fs = o.get("framing_summary")
+        if fs is None:
+            continue
+        s = str(fs).strip()
+        if not s:
+            continue
+        framing_texts.append(s)
+    if framing_texts:
+        bag: list[str] = []
+        per_sets: list[set[str]] = []
+        for text in framing_texts:
+            words = re.findall(r"[A-Za-z]{5,}", text.lower())
+            kept = [
+                w for w in words if w not in stopwords and w not in topic_words and len(w) >= 5
+            ]
+            per_sets.append(set(kept))
+            bag.extend(kept)
+        if bag and per_sets:
+            ctr = Counter(bag)
+            common = set.intersection(*per_sets) if len(per_sets) >= 2 else set(bag)
+            common = {w for w in common if w not in stopwords and w not in topic_words}
+            candidates = common if common else set(ctr.keys())
+            best = max(candidates, key=lambda w: (ctr[w], -len(w), w))
+            insights.append(
+                {
+                    "kind": "consensus_keyword",
+                    "word": best,
+                    "label": "word all outlets focused on",
+                }
+            )
+
+    return insights
 
 
 def _framing_by_source_for_outlets(topic: str, db: Session, sources: list[str]) -> dict[str, str]:
@@ -285,7 +557,7 @@ _ARTICLE_TRUNC_MARKER_RE = re.compile(
 
 
 def _sanitize_outlet_texts_for_api(out: dict) -> None:
-    """Apply clean_text to user-visible article fields on /analyze (not missing_angle / reasoning)."""
+    """Apply clean_text to user-visible article fields on /analyze."""
     for key in ("framing_summary", "top_article_preview", "top_article_headline", "headline"):
         v = out.get(key)
         if v is None or not isinstance(v, str):
@@ -827,19 +1099,16 @@ async def analyze_topic(
 
     framing_map = _framing_by_source_for_outlets(normalized_topic, db, selected)
     score_data = _build_outlet_scores(normalized_topic, db, selected, framing_map)
+    coverage_insights = generate_coverage_insights(score_data["outlets"], normalized_topic)
 
-    llm_result = LLMAnalyzer().generate_missing_angle(normalized_topic, db, selected)
-    llm_data = llm_result.get("data", {})
     headlines = _build_headline_map(normalized_topic, db, selected)
     top_article_fields = _build_top_article_fields_map(normalized_topic, db, selected)
     timeline = _build_bias_timeline(normalized_topic, db, selected, days=7)
 
-    outlet_missing_angles = llm_data.get("outlet_missing_angles", {})
-    outlets_with_missing_angle = []
+    outlets_payload = []
     for outlet in score_data["outlets"]:
         source = outlet["source"]
         merged_outlet = dict(outlet)
-        merged_outlet["missing_angle"] = outlet_missing_angles.get(source)
         merged_outlet["headline"] = headlines.get(source)
         ta = top_article_fields.get(source)
         if ta:
@@ -851,7 +1120,7 @@ async def analyze_topic(
             merged_outlet["top_article_headline"] = None
             merged_outlet["top_article_preview"] = None
         _sanitize_outlet_texts_for_api(merged_outlet)
-        outlets_with_missing_angle.append(merged_outlet)
+        outlets_payload.append(merged_outlet)
 
     bias_distribution = bias_distribution_from_outlets(score_data["outlets"])
     most_left_outlet, most_right_outlet = extrem_bias_outlets(score_data["outlets"])
@@ -859,47 +1128,25 @@ async def analyze_topic(
     source_pool = list(fetch_meta.get("source_pool") or detect_source_categories_for_query(normalized_topic))
     coverage_status = _coverage_confidence_status(int(strict_count))
 
-    reasoning = (
-        f"Confidence: {llm_data.get('confidence') or 'unknown'}. "
-        f"Computed from multi-outlet article framing and sentiment/bias patterns for topic '{normalized_topic}'."
-    )
-    if llm_data.get("from_cache"):
-        reasoning += " Reused same-day cached analysis."
-    if llm_data.get("analysis_status") == "quota_limited":
-        reasoning = (
-            "Gemini Pro and Gemini Flash both hit API quota limits for this request. "
-            "Missing-angle synthesis is temporarily unavailable."
-        )
-    elif llm_data.get("error"):
-        reasoning = llm_data.get("error_message") or "Missing-angle reasoning unavailable."
-
     return {
         "success": True,
         "data": {
             "topic": normalized_topic,
             "status": coverage_status,
-            "analysis_status": llm_data.get("analysis_status"),
             "source_pool": source_pool,
             "fetch": fetch_meta,
             "scoring": {
                 "article_count": int(strict_count),
                 "scored_count": score_result["scored_count"],
             },
-            "missing_angle": {
-                "value": llm_data.get("missing_angle"),
-                "reasoning": reasoning,
-                "confidence": llm_data.get("confidence"),
-                "from_cache": llm_data.get("from_cache", False),
-                "error": llm_data.get("error", False),
-                "error_message": llm_data.get("error_message"),
-            },
             "outlet_count": score_data["outlet_count"],
-            "outlets": outlets_with_missing_angle,
+            "outlets": outlets_payload,
             "bias_distribution": bias_distribution,
             "most_left_outlet": most_left_outlet,
             "most_right_outlet": most_right_outlet,
             "selected_outlets": selected,
             "timeline": timeline,
+            "coverage_insights": coverage_insights,
         },
         "error": None,
     }

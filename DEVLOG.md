@@ -838,3 +838,23 @@ On the frontend, the hero section asks for **`/todays-topics` on load**, shows *
 The navbar had always linked **`#methodology`**, but that only scrolled to the Missing Angle card after you already had results—there was nowhere to explain how NewsLens works before you searched. We introduced a **hash-routed** standalone page at **`#methodology`**: five substantive sections (bias detection with RoBERTa sentiment + framing keywords, tiered outlet selection and top-five-by-volume rule, Gemini Missing Angle, honest limitations, and why we built this), max-width **720px** essay layout, **← Dashboard** back link, shared **topbar**, and **`document.title`** set to **Methodology — NewsLens**. The in-dashboard Missing Angle block is now anchored as **`#missing-angle`** so it doesn’t collide with the full Methodology route. **`npm run build`** succeeds.
 
 
+## [2026-05-09] — From Gemini Missing Angle to “What The Numbers Reveal”
+
+### Challenge
+Production searches regularly hit **Gemini quota limits** (429 / capacity errors). The Missing Angle card degraded to “temporarily unavailable” copy even when sentiment, bias, and framing were fully computed—so the feature felt broken whenever the external LLM failed.
+
+### Investigation
+Missing Angle depended on **`GEMINI_API_KEY`**, **`google-generativeai`**, retries, cooldowns, and same-day **`topic_analysis`** caching. That stack was orthogonal to the core value (compare outlets on real article scores). Any outage or quota issue surfaced as user-visible failure despite rich deterministic data already in **`GET /analyze`**.
+
+### Decision
+Drop generative editorial synthesis from the dashboard path. Replace it with **purely data-driven insights** derived from existing outlet payloads (**`avg_bias_score`**, **`avg_sentiment_score`**, **`article_count`**, **`framing_summary`**) inside **`generate_coverage_insights`**, so **`coverage_insights`** ships in the same **`/analyze`** response with **no extra API calls**.
+
+### Implementation
+- **`backend/main.py`**: Removed **`LLMAnalyzer`** usage; **`/analyze`** no longer returns **`missing_angle`** or LLM **`analysis_status`**. **`coverage_insights`** remains populated from **`generate_coverage_insights(...)`**. Deleted **`backend/llm_analyzer.py`**; removed **`google-generativeai`** from **`requirements.txt`**. **`.env.example`**: removed **`GEMINI_API_KEY`** (comment notes replacement). **`004-insights.mdc`** replaces the old LLM Cursor rule; **`006-env-config.mdc`** no longer lists Gemini as required.
+- **`frontend/app.js` / `styles.css`**: **What The Numbers Reveal** card (hide when empty), row layout + footer disclaimer; removed Missing Angle from Read Across overlay and normalized payload; methodology updated for deterministic insights. **`PROJECT_CONTEXT.md`** aligned with the new direction.
+- **Tests**: **`test_coverage_insights`**, simplified **`test_analyze_resilience`** (no LLM), **`test_pipeline`** unchanged integration shape.
+
+### Result
+All **`backend/tests`** pass (**23**). **`npm run build`** (**`frontend/`**) succeeds. The dashboard no longer blocks on Gemini; insight lines reflect real numbers from the analysis envelope only.
+
+

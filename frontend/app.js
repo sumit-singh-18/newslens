@@ -328,76 +328,6 @@ function ChartHistoryPartialHint({ x }) {
 
 const CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
 
-/** Shown when Missing Angle is absent or backend returned quota/API noise — never raw JSON/errors. */
-const MISSING_ANGLE_UNAVAILABLE_COPY =
-  "Editorial analysis temporarily unavailable. Check back shortly.";
-/** User-facing copy when backend hit Gemini quota / transient LLM limits (Issue 3). */
-const MISSING_ANGLE_SEARCH_AGAIN_SHORTLY =
-  "Analysis will be available in ~1 minute. Search again shortly.";
-
-function reasoningLooksLikeQuotaOrTransientFailure(reasoning) {
-  const r = String(reasoning ?? "").toLowerCase();
-  return (
-    r.includes("quota") ||
-    r.includes("429") ||
-    r.includes("exceeded") ||
-    r.includes("unavailable")
-  );
-}
-
-/** True when the topic insight is empty but the backend explained a quota/capacity issue. */
-function missingAngleShouldShowQuotaWaitMessage(ma) {
-  if (!ma || typeof ma !== "object") return false;
-  const rawVal = ma.value;
-  const valueMissing =
-    rawVal == null || (typeof rawVal === "string" && rawVal.trim() === "");
-  return valueMissing && reasoningLooksLikeQuotaOrTransientFailure(ma.reasoning);
-}
-
-function missingAngleIsUnavailableUserFacing(ma) {
-  if (!ma || typeof ma !== "object") return true;
-  if (String(ma.analysis_status ?? "").toLowerCase() === "quota_limited") return true;
-  const rawVal = ma.value;
-  const valueMissing =
-    rawVal == null || (typeof rawVal === "string" && rawVal.trim() === "");
-  const r = String(ma.reasoning ?? "").toLowerCase();
-  const reasoningLooksLikeQuotaOrLimit =
-    r.includes("quota") || r.includes("429") || r.includes("exceeded");
-  return valueMissing || reasoningLooksLikeQuotaOrLimit;
-}
-
-function missingAnglePresentationalCopy(ma) {
-  const analysisStatus = String(ma?.analysis_status ?? "").toLowerCase();
-  if (analysisStatus === "quota_limited") {
-    return {
-      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
-      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
-    };
-  }
-  if (missingAngleShouldShowQuotaWaitMessage(ma)) {
-    return {
-      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
-      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
-    };
-  }
-  if (missingAngleIsUnavailableUserFacing(ma)) {
-    return {
-      body: MISSING_ANGLE_UNAVAILABLE_COPY,
-      reasoning: MISSING_ANGLE_UNAVAILABLE_COPY,
-    };
-  }
-  return {
-    body:
-      ma.value != null && String(ma.value).trim()
-        ? ma.value
-        : "Missing-angle analysis is not available for this topic yet.",
-    reasoning:
-      ma.reasoning != null && String(ma.reasoning).trim()
-        ? ma.reasoning
-        : "No additional reasoning was returned by the backend.",
-  };
-}
-
 function installGlobalErrorHandlers() {
   const show = (message, extra) => {
     const line = [message, extra].filter(Boolean).join("\n");
@@ -495,7 +425,6 @@ function normalizeOutlet(o) {
       bias_label: null,
       bias_score: null,
       emotional_intensity: null,
-      missing_angle: null,
       framing_summary: null,
       headline: null,
       top_article_url: null,
@@ -546,12 +475,6 @@ function normalizeOutlet(o) {
     bias_label,
     bias_score,
     emotional_intensity,
-    missing_angle:
-      o.missing_angle == null || o.missing_angle === ""
-        ? null
-        : typeof o.missing_angle === "string"
-          ? o.missing_angle
-          : String(o.missing_angle),
     headline: o.headline == null ? null : String(o.headline),
     framing_summary:
       o.framing_summary == null || o.framing_summary === ""
@@ -569,35 +492,6 @@ function normalizeOutlet(o) {
       o.top_article_preview == null || o.top_article_preview === ""
         ? null
         : String(o.top_article_preview),
-  };
-}
-
-function normalizeMissingAngleBlock(ma) {
-  if (!ma || typeof ma !== "object") {
-    return {
-      value: null,
-      reasoning: "",
-      confidence: null,
-      from_cache: false,
-      analysis_status: null,
-      error: false,
-      error_message: null,
-    };
-  }
-  return {
-    value:
-      ma.value == null || ma.value === ""
-        ? null
-        : typeof ma.value === "string"
-          ? ma.value
-          : String(ma.value),
-    reasoning:
-      ma.reasoning == null ? "" : typeof ma.reasoning === "string" ? ma.reasoning : String(ma.reasoning),
-    confidence: ma.confidence ?? null,
-    from_cache: Boolean(ma.from_cache),
-    analysis_status: ma.analysis_status == null ? null : String(ma.analysis_status),
-    error: Boolean(ma.error),
-    error_message: ma.error_message == null ? null : String(ma.error_message),
   };
 }
 
@@ -621,19 +515,15 @@ function normalizeBiasDistribution(raw) {
   return { left_pct: lp, center_pct: cp, right_pct: rp };
 }
 
+function normalizeCoverageInsights(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item) => item && typeof item === "object" && typeof item.kind === "string");
+}
+
 function normalizeAnalyzePayload(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
   const fetch = d.fetch && typeof d.fetch === "object" ? d.fetch : {};
-  const maBlock = normalizeMissingAngleBlock(d.missing_angle);
-  const rootAnalysisStatus =
-    d.analysis_status == null || d.analysis_status === ""
-      ? null
-      : String(d.analysis_status);
-  const missing_angle = {
-    ...maBlock,
-    analysis_status: maBlock.analysis_status ?? rootAnalysisStatus,
-  };
   const outletColorMap = buildOutletColorMap(outlets);
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
@@ -641,7 +531,6 @@ function normalizeAnalyzePayload(raw) {
     outlets,
     outletColorMap,
     timeline: normalizeTimeline(d.timeline),
-    missing_angle,
     fetch,
     coverage_message:
       typeof fetch.coverage_message === "string" && fetch.coverage_message.trim()
@@ -655,6 +544,7 @@ function normalizeAnalyzePayload(raw) {
     most_left_outlet: d.most_left_outlet == null ? null : String(d.most_left_outlet),
     most_right_outlet: d.most_right_outlet == null ? null : String(d.most_right_outlet),
     selected_outlets: Array.isArray(d.selected_outlets) ? d.selected_outlets.map(String) : [],
+    coverage_insights: normalizeCoverageInsights(d.coverage_insights),
   };
 }
 
@@ -1282,7 +1172,7 @@ function ComparisonPanel({ pair, outlets, onExit }) {
               </li>
               <li>
                 <span>Key framing phrase</span>
-                <strong className="wrap-strong">{framingPhrase(a.missing_angle)}</strong>
+                <strong className="wrap-strong">{framingPhrase(a.framing_summary)}</strong>
               </li>
             </ul>
           ) : (
@@ -1314,7 +1204,7 @@ function ComparisonPanel({ pair, outlets, onExit }) {
               </li>
               <li>
                 <span>Key framing phrase</span>
-                <strong className="wrap-strong">{framingPhrase(b.missing_angle)}</strong>
+                <strong className="wrap-strong">{framingPhrase(b.framing_summary)}</strong>
               </li>
             </ul>
           ) : (
@@ -1663,17 +1553,116 @@ function TopicTrendChart({ topic, outlets, outletColorMap }) {
   );
 }
 
-function MissingAngleCard({ missingAngle }) {
-  const { body, reasoning } = missingAnglePresentationalCopy(missingAngle);
+const COVERAGE_INSIGHT_ICONS = {
+  most_charged: "🔥",
+  most_neutral: "😐",
+  framing_gap: "↔️",
+  sentiment_split: "📊",
+  volume_leader: "📰",
+  consensus_keyword: "🔑",
+};
+
+const COVERAGE_INSIGHT_LABELS = {
+  most_charged: "Most charged",
+  most_neutral: "Most neutral",
+  framing_gap: "Biggest divide",
+  sentiment_split: "Sentiment split",
+  volume_leader: "Coverage leader",
+  consensus_keyword: "Common focus",
+};
+
+function formatCoverageInsightParts(insight) {
+  const kind = insight.kind;
+  const icon = COVERAGE_INSIGHT_ICONS[kind] || "•";
+  const headline = COVERAGE_INSIGHT_LABELS[kind] || String(kind).replace(/_/g, " ");
+
+  if (kind === "most_charged") {
+    const score = Number(insight.score);
+    const s = Number.isFinite(score) ? score.toFixed(1) : insight.score;
+    const val = `${insight.outlet} scored ${s}/10 emotional intensity`;
+    const tail = "— highest charged coverage";
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "most_neutral") {
+    const score = Number(insight.score);
+    const s = Number.isFinite(score) ? score.toFixed(1) : insight.score;
+    const val = `${insight.outlet} scored ${s}/10`;
+    const tail = "— most measured, factual framing";
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "framing_gap") {
+    const g = Number(insight.gap);
+    const gapTxt = Number.isFinite(g) ? g.toFixed(2) : insight.gap;
+    const val = `${insight.outlet_a} and ${insight.outlet_b} are ${gapTxt} bias points apart`;
+    const tail = "— widest perspective gap";
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "sentiment_split") {
+    const la = Number(insight.left_avg);
+    const ra = Number(insight.right_avg);
+    const lv = Number.isFinite(la) ? la.toFixed(2) : insight.left_avg;
+    const rv = Number.isFinite(ra) ? ra.toFixed(2) : insight.right_avg;
+    const diff = Math.abs(ra - la);
+    const pct = Math.min(100, Math.round(diff * 100));
+    const label = String(insight.label || "");
+    const side =
+      label.includes("right") || label.includes("Right") ? "Right-leaning" : "Left-leaning";
+    const val = `${side} outlets framed this ~${pct}% more positively`;
+    const tail = `— left avg ${lv}, right avg ${rv}`;
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "volume_leader") {
+    const val = `${insight.outlet} published the most articles (${insight.count}) on this topic`;
+    const tail = `— ${insight.label || "volume leader"}`;
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "consensus_keyword") {
+    const w = String(insight.word || "").trim() || "—";
+    const val = `All outlets emphasized the word '${w}'`;
+    const tail = "— shared vocabulary across framing summaries";
+    return { icon, headline, value: val, description: tail };
+  }
+  return { icon, headline, value: "", description: "" };
+}
+
+function WhatTheNumbersRevealCard({ insights }) {
+  const list = Array.isArray(insights) ? insights : [];
+  if (list.length === 0) return null;
   return (
-    <section id="missing-angle" className="missing-angle card">
-      <p className="eyebrow">Editorial insight</p>
-      <h2>Missing Angle</h2>
-      <p>{body}</p>
-      <div className="reasoning-box">
-        <h4>Reasoning</h4>
-        <p>{reasoning}</p>
-      </div>
+    <section id="coverage-insights" className="what-numbers-reveal card">
+      <p className="eyebrow">Insights</p>
+      <h2>What The Numbers Reveal</h2>
+      <p className="what-numbers-reveal-sub">Data-driven insights from coverage analysis</p>
+      <ul className="coverage-insight-list" role="list">
+        {list.map((insight, idx) => {
+          const parts = formatCoverageInsightParts(insight);
+          const key = `${insight.kind}-${idx}`;
+          const isLast = idx === list.length - 1;
+          return (
+            <li
+              key={key}
+              className={`coverage-insight-row${isLast ? " coverage-insight-row--last" : ""}`}
+            >
+              <span className="coverage-insight-icon" aria-hidden>
+                {parts.icon}
+              </span>
+              <span className="coverage-insight-text">
+                <span className="coverage-insight-head">{parts.headline}:</span>{" "}
+                <strong className="coverage-insight-value">{parts.value}</strong>
+                {parts.description ? (
+                  <>
+                    {" "}
+                    <span className="coverage-insight-desc">{parts.description}</span>
+                  </>
+                ) : null}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="what-numbers-reveal-footer micro-muted">
+        Insights calculated from article scores and framing data. No AI generation involved.
+      </p>
     </section>
   );
 }
@@ -1763,13 +1752,7 @@ function readAcrossBorderColor(label) {
   return "#6B7280";
 }
 
-function missingAngleHasRevealContent(ma) {
-  if (!ma || typeof ma !== "object") return false;
-  const v = ma.value;
-  return v != null && String(v).trim() !== "";
-}
-
-function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
+function ReadAcrossBiasOverlay({ topic, outlets, onClose }) {
   const sorted = useMemo(() => {
     const list = Array.isArray(outlets) ? [...outlets] : [];
     return list.sort((a, b) => {
@@ -1784,7 +1767,6 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
   }, [outlets]);
 
   const [readSet, setReadSet] = useState(() => new Set());
-  const [missingExpanded, setMissingExpanded] = useState(false);
 
   useEffect(() => {
     if (!topic) return;
@@ -1793,7 +1775,6 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
       if (readAcrossIsMarked(topic, o.source)) next.add(o.source);
     }
     setReadSet(next);
-    setMissingExpanded(false);
   }, [topic, sorted]);
 
   useEffect(() => {
@@ -1846,8 +1827,6 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
     }
     return pick;
   }, [intensityRanked]);
-
-  const showMissingAngle = missingAngleHasRevealContent(missingAngle);
 
   const toggleRead = (source, checked) => {
     readAcrossSetMarked(topic, source, checked);
@@ -1995,32 +1974,6 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
               </div>
             </div>
           </section>
-
-          {showMissingAngle ? (
-            <section className="read-across-missing-wrap" aria-labelledby="missing-angle-toggle">
-              <button
-                type="button"
-                id="missing-angle-toggle"
-                className="read-across-missing-toggle"
-                aria-expanded={missingExpanded}
-                onClick={() => setMissingExpanded((v) => !v)}
-              >
-                What everyone missed →
-              </button>
-              <div
-                className={`read-across-missing-expand${missingExpanded ? " is-expanded" : ""}`}
-              >
-                <div className="read-across-missing-inner">
-                  {missingAngle?.value != null && String(missingAngle.value).trim() ? (
-                    <p className="read-across-missing-text">{String(missingAngle.value).trim()}</p>
-                  ) : null}
-                  {missingAngle?.reasoning != null && String(missingAngle.reasoning).trim() ? (
-                    <p className="read-across-missing-reason">{String(missingAngle.reasoning).trim()}</p>
-                  ) : null}
-                </div>
-              </div>
-            </section>
-          ) : null}
         </div>
       </div>
     </div>
@@ -2071,7 +2024,7 @@ function MethodologyPage() {
       </h1>
       <p className="methodology-lede">
         NewsLens compares how major outlets cover the same story. Here is how we analyze sentiment and bias, which
-        sources we include, how we use AI for the Missing Angle, and what you should not expect from this tool.
+        sources we include, how we derive data-driven coverage insights, and what you should not expect from this tool.
       </p>
 
       <section className="methodology-section" aria-labelledby="m-bias">
@@ -2155,24 +2108,20 @@ function MethodologyPage() {
         </div>
       </section>
 
-      <section className="methodology-section" aria-labelledby="m-missing">
-        <h2 id="m-missing" className="methodology-section-title">
-          What Is the Missing Angle?
+      <section className="methodology-section" aria-labelledby="m-insights">
+        <h2 id="m-insights" className="methodology-section-title">
+          What The Numbers Reveal
         </h2>
         <div className="methodology-body">
           <p>
-            After we analyze sentiment and bias across outlets, we compile article summaries and structured signals and
-            send them to a large language model—<strong>Google Gemini</strong> (with sensible fallbacks when quotas bite).
+            The <strong>What The Numbers Reveal</strong> card summarizes patterns already computed for your search: which
+            outlet sounds most emotionally charged or most neutral, how far apart the ideological extremes sit on the bias
+            axis, whether left- and right-leaning outlets diverge on average sentiment, who published the most articles, and
+            which substantive terms recur across framing summaries.
           </p>
           <p>
-            We ask a single adversarial question: <strong>What perspective did all of these outlets collectively fail to
-            foreground?</strong> The answer might highlight affected communities who never received a direct quote,
-            historical parallels readers were not given, international viewpoints left out of the U.S.-centric frame, or
-            systemic drivers reduced to one-off events.
-          </p>
-          <p>
-            The Missing Angle is <strong>explicitly labeled as AI-generated editorial analysis</strong>. It is not a fact
-            checker and not a prediction—it is a structured prompt to widen your lens after you have seen the spectrum.
+            These insights are <strong>deterministic summaries of scores and text we already analyzed</strong>. No extra API
+            calls and no generative editorial layer—so the card stays fast, reproducible, and independent of LLM quotas.
           </p>
         </div>
       </section>
@@ -2202,8 +2151,8 @@ function MethodologyPage() {
             headline. Treat low-volume topics as directional, not definitive.
           </p>
           <p>
-            <strong>AI caveats:</strong> Missing Angle prose is machine-generated synthesis. Use it as a{" "}
-            <strong>starting prompt for curiosity</strong>, not a final verdict—especially on sensitive stories.
+            <strong>Interpretation:</strong> Charts and insight lines summarize model outputs and heuristics. Use them as a{" "}
+            <strong>starting point for curiosity</strong>, not a final verdict—especially on sensitive stories.
           </p>
         </div>
       </section>
@@ -2348,7 +2297,7 @@ function AnalysisResults({
           <TopicTrendChart topic={data.topic || ""} outlets={outlets} outletColorMap={outletColorMap} />
         </div>
       </div>
-      <MissingAngleCard missingAngle={data.missing_angle} />
+      <WhatTheNumbersRevealCard insights={data.coverage_insights} />
         </>
       ) : null}
     </main>
@@ -2665,7 +2614,6 @@ function App() {
             <ReadAcrossBiasOverlay
               topic={data.topic || ""}
               outlets={data.outlets || []}
-              missingAngle={data.missing_angle}
               onClose={() => setReadAcrossOpen(false)}
             />
           ) : null}

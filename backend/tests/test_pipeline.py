@@ -15,7 +15,6 @@ from sqlalchemy.pool import StaticPool
 from backend import main
 from backend.database import Article, ArticleScore, Base, normalize_topic
 from backend.framing_extract import clean_text
-from backend.llm_analyzer import LLMAnalyzer
 from backend.main import _framing_by_source_for_outlets
 from backend.news_fetcher import compute_selected_outlets_from_db, fetch_and_store_articles
 from backend.nlp_pipeline import NLPPipeline
@@ -158,23 +157,6 @@ def test_analyze_returns_complete_outlet_fields(pipeline_db: Session, monkeypatc
         def score_topic_articles(self, topic: str, db: Session):
             return {"topic": topic, "article_count": 0, "scored_count": 0}
 
-    def _fake_generate_missing_angle(_self, topic: str, db: Session, outlet_sources=None):
-        outlets = list(outlet_sources or [])
-        return {
-            "success": True,
-            "data": {
-                "topic": topic,
-                "missing_angle": None,
-                "confidence": None,
-                "outlet_missing_angles": {o: None for o in outlets},
-                "from_cache": False,
-                "error": False,
-                "error_message": None,
-            },
-            "error": None,
-        }
-
-    monkeypatch.setattr(LLMAnalyzer, "generate_missing_angle", _fake_generate_missing_angle)
     main.app.dependency_overrides[main.get_db] = _override_get_db
     main.app.dependency_overrides[main.get_nlp_pipeline] = lambda: _FakeNLP()
     try:
@@ -187,6 +169,8 @@ def test_analyze_returns_complete_outlet_fields(pipeline_db: Session, monkeypatc
     payload = response.json()
     assert payload.get("success") is True
     data = payload.get("data") or {}
+    assert "coverage_insights" in data
+    assert isinstance(data.get("coverage_insights"), list)
     outlets = data.get("outlets")
     assert isinstance(outlets, list) and len(outlets) > 0
 
