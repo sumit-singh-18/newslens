@@ -52722,52 +52722,6 @@ function ChartHistoryPartialHint({ x: x2 }) {
   return /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted", style: { textAlign: "center", margin: "10px 0 0" } }, "Showing ", x2, " ", dayLabel, " of data \u2014 history builds daily as more searches happen");
 }
 var CHART_AXIS_TICK = { fill: "#888", fontSize: 11 };
-var MISSING_ANGLE_UNAVAILABLE_COPY = "Editorial analysis temporarily unavailable. Check back shortly.";
-var MISSING_ANGLE_SEARCH_AGAIN_SHORTLY = "Analysis will be available in ~1 minute. Search again shortly.";
-function reasoningLooksLikeQuotaOrTransientFailure(reasoning) {
-  const r2 = String(reasoning ?? "").toLowerCase();
-  return r2.includes("quota") || r2.includes("429") || r2.includes("exceeded") || r2.includes("unavailable");
-}
-function missingAngleShouldShowQuotaWaitMessage(ma) {
-  if (!ma || typeof ma !== "object") return false;
-  const rawVal = ma.value;
-  const valueMissing = rawVal == null || typeof rawVal === "string" && rawVal.trim() === "";
-  return valueMissing && reasoningLooksLikeQuotaOrTransientFailure(ma.reasoning);
-}
-function missingAngleIsUnavailableUserFacing(ma) {
-  if (!ma || typeof ma !== "object") return true;
-  if (String(ma.analysis_status ?? "").toLowerCase() === "quota_limited") return true;
-  const rawVal = ma.value;
-  const valueMissing = rawVal == null || typeof rawVal === "string" && rawVal.trim() === "";
-  const r2 = String(ma.reasoning ?? "").toLowerCase();
-  const reasoningLooksLikeQuotaOrLimit = r2.includes("quota") || r2.includes("429") || r2.includes("exceeded");
-  return valueMissing || reasoningLooksLikeQuotaOrLimit;
-}
-function missingAnglePresentationalCopy(ma) {
-  const analysisStatus = String(ma?.analysis_status ?? "").toLowerCase();
-  if (analysisStatus === "quota_limited") {
-    return {
-      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
-      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY
-    };
-  }
-  if (missingAngleShouldShowQuotaWaitMessage(ma)) {
-    return {
-      body: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY,
-      reasoning: MISSING_ANGLE_SEARCH_AGAIN_SHORTLY
-    };
-  }
-  if (missingAngleIsUnavailableUserFacing(ma)) {
-    return {
-      body: MISSING_ANGLE_UNAVAILABLE_COPY,
-      reasoning: MISSING_ANGLE_UNAVAILABLE_COPY
-    };
-  }
-  return {
-    body: ma.value != null && String(ma.value).trim() ? ma.value : "Missing-angle analysis is not available for this topic yet.",
-    reasoning: ma.reasoning != null && String(ma.reasoning).trim() ? ma.reasoning : "No additional reasoning was returned by the backend."
-  };
-}
 function installGlobalErrorHandlers() {
   const show = (message, extra) => {
     const line = [message, extra].filter(Boolean).join("\n");
@@ -52850,7 +52804,6 @@ function normalizeOutlet(o) {
       bias_label: null,
       bias_score: null,
       emotional_intensity: null,
-      missing_angle: null,
       framing_summary: null,
       headline: null,
       top_article_url: null,
@@ -52887,34 +52840,11 @@ function normalizeOutlet(o) {
     bias_label,
     bias_score,
     emotional_intensity,
-    missing_angle: o.missing_angle == null || o.missing_angle === "" ? null : typeof o.missing_angle === "string" ? o.missing_angle : String(o.missing_angle),
     headline: o.headline == null ? null : String(o.headline),
     framing_summary: o.framing_summary == null || o.framing_summary === "" ? null : typeof o.framing_summary === "string" ? o.framing_summary : String(o.framing_summary),
     top_article_url: o.top_article_url == null || o.top_article_url === "" ? null : String(o.top_article_url),
     top_article_headline: o.top_article_headline == null || o.top_article_headline === "" ? null : String(o.top_article_headline),
     top_article_preview: o.top_article_preview == null || o.top_article_preview === "" ? null : String(o.top_article_preview)
-  };
-}
-function normalizeMissingAngleBlock(ma) {
-  if (!ma || typeof ma !== "object") {
-    return {
-      value: null,
-      reasoning: "",
-      confidence: null,
-      from_cache: false,
-      analysis_status: null,
-      error: false,
-      error_message: null
-    };
-  }
-  return {
-    value: ma.value == null || ma.value === "" ? null : typeof ma.value === "string" ? ma.value : String(ma.value),
-    reasoning: ma.reasoning == null ? "" : typeof ma.reasoning === "string" ? ma.reasoning : String(ma.reasoning),
-    confidence: ma.confidence ?? null,
-    from_cache: Boolean(ma.from_cache),
-    analysis_status: ma.analysis_status == null ? null : String(ma.analysis_status),
-    error: Boolean(ma.error),
-    error_message: ma.error_message == null ? null : String(ma.error_message)
   };
 }
 function normalizeTimeline(rows) {
@@ -52934,16 +52864,14 @@ function normalizeBiasDistribution(raw) {
   if (![lp, cp, rp].every((n) => Number.isFinite(n))) return null;
   return { left_pct: lp, center_pct: cp, right_pct: rp };
 }
+function normalizeCoverageInsights(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item) => item && typeof item === "object" && typeof item.kind === "string");
+}
 function normalizeAnalyzePayload(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const outlets = Array.isArray(d.outlets) ? d.outlets.map(normalizeOutlet) : [];
   const fetch2 = d.fetch && typeof d.fetch === "object" ? d.fetch : {};
-  const maBlock = normalizeMissingAngleBlock(d.missing_angle);
-  const rootAnalysisStatus = d.analysis_status == null || d.analysis_status === "" ? null : String(d.analysis_status);
-  const missing_angle = {
-    ...maBlock,
-    analysis_status: maBlock.analysis_status ?? rootAnalysisStatus
-  };
   const outletColorMap = buildOutletColorMap(outlets);
   return {
     topic: typeof d.topic === "string" ? d.topic : "",
@@ -52951,7 +52879,6 @@ function normalizeAnalyzePayload(raw) {
     outlets,
     outletColorMap,
     timeline: normalizeTimeline(d.timeline),
-    missing_angle,
     fetch: fetch2,
     coverage_message: typeof fetch2.coverage_message === "string" && fetch2.coverage_message.trim() ? fetch2.coverage_message.trim() : null,
     coverage_suggestions: Array.isArray(fetch2.coverage_suggestions) ? fetch2.coverage_suggestions.map(String).filter(Boolean) : [],
@@ -52959,7 +52886,8 @@ function normalizeAnalyzePayload(raw) {
     bias_distribution: normalizeBiasDistribution(d.bias_distribution),
     most_left_outlet: d.most_left_outlet == null ? null : String(d.most_left_outlet),
     most_right_outlet: d.most_right_outlet == null ? null : String(d.most_right_outlet),
-    selected_outlets: Array.isArray(d.selected_outlets) ? d.selected_outlets.map(String) : []
+    selected_outlets: Array.isArray(d.selected_outlets) ? d.selected_outlets.map(String) : [],
+    coverage_insights: normalizeCoverageInsights(d.coverage_insights)
   };
 }
 function sentimentBucket(labels, keys2) {
@@ -53410,7 +53338,7 @@ function ComparisonPanel({ pair, outlets, onExit }) {
   const map3 = (0, import_react36.useMemo)(() => Object.fromEntries(outlets.map((o) => [o.source, o])), [outlets]);
   const a2 = pair[0] ? map3[pair[0]] : null;
   const b = pair[1] ? map3[pair[1]] : null;
-  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card comparison-panel", "aria-label": "Outlet comparison" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Outlet comparison"), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-exit-compare", onClick: onExit }, "Exit Comparison")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-grid" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-col" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "comparison-label" }, a2?.source || "\u2014"), a2 ? /* @__PURE__ */ import_react36.default.createElement("ul", { className: "comparison-list" }, /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof a2.avg_bias_score === "number" ? a2.avg_bias_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof a2.avg_sentiment_score === "number" ? a2.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Headline used"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, a2.headline || "\u2014")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(a2.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Key framing phrase"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, framingPhrase(a2.missing_angle)))) : /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted" }, "Select a second outlet.")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-divider", "aria-hidden": true }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-col" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "comparison-label" }, b?.source || "\u2014"), b ? /* @__PURE__ */ import_react36.default.createElement("ul", { className: "comparison-list" }, /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof b.avg_bias_score === "number" ? b.avg_bias_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof b.avg_sentiment_score === "number" ? b.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Headline used"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, b.headline || "\u2014")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(b.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Key framing phrase"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, framingPhrase(b.missing_angle)))) : /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted" }, "Select another outlet."))));
+  return /* @__PURE__ */ import_react36.default.createElement("section", { className: "card comparison-panel", "aria-label": "Outlet comparison" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-head" }, /* @__PURE__ */ import_react36.default.createElement("h2", null, "Outlet comparison"), /* @__PURE__ */ import_react36.default.createElement("button", { type: "button", className: "btn-exit-compare", onClick: onExit }, "Exit Comparison")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-grid" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-col" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "comparison-label" }, a2?.source || "\u2014"), a2 ? /* @__PURE__ */ import_react36.default.createElement("ul", { className: "comparison-list" }, /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof a2.avg_bias_score === "number" ? a2.avg_bias_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof a2.avg_sentiment_score === "number" ? a2.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Headline used"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, a2.headline || "\u2014")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(a2.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Key framing phrase"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, framingPhrase(a2.framing_summary)))) : /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted" }, "Select a second outlet.")), /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-divider", "aria-hidden": true }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "comparison-col" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "comparison-label" }, b?.source || "\u2014"), b ? /* @__PURE__ */ import_react36.default.createElement("ul", { className: "comparison-list" }, /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof b.avg_bias_score === "number" ? b.avg_bias_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Sentiment score"), /* @__PURE__ */ import_react36.default.createElement("strong", null, typeof b.avg_sentiment_score === "number" ? b.avg_sentiment_score.toFixed(3) : "N/A")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Headline used"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, b.headline || "\u2014")), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Emotional intensity"), /* @__PURE__ */ import_react36.default.createElement("strong", null, emotionalIntensity(b.avg_sentiment_score))), /* @__PURE__ */ import_react36.default.createElement("li", null, /* @__PURE__ */ import_react36.default.createElement("span", null, "Key framing phrase"), /* @__PURE__ */ import_react36.default.createElement("strong", { className: "wrap-strong" }, framingPhrase(b.framing_summary)))) : /* @__PURE__ */ import_react36.default.createElement("p", { className: "micro-muted" }, "Select another outlet."))));
 }
 function HeadlineComparison({ outlets }) {
   const list = Array.isArray(outlets) ? outlets : [];
@@ -53649,9 +53577,90 @@ function TopicTrendChart({ topic, outlets, outletColorMap }) {
     }
   ))))), partialMeta.show ? /* @__PURE__ */ import_react36.default.createElement(ChartHistoryPartialHint, { x: partialMeta.x }) : null) : null);
 }
-function MissingAngleCard({ missingAngle }) {
-  const { body, reasoning } = missingAnglePresentationalCopy(missingAngle);
-  return /* @__PURE__ */ import_react36.default.createElement("section", { id: "missing-angle", className: "missing-angle card" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Editorial insight"), /* @__PURE__ */ import_react36.default.createElement("h2", null, "Missing Angle"), /* @__PURE__ */ import_react36.default.createElement("p", null, body), /* @__PURE__ */ import_react36.default.createElement("div", { className: "reasoning-box" }, /* @__PURE__ */ import_react36.default.createElement("h4", null, "Reasoning"), /* @__PURE__ */ import_react36.default.createElement("p", null, reasoning)));
+var COVERAGE_INSIGHT_ICONS = {
+  most_charged: "\u{1F525}",
+  most_neutral: "\u{1F610}",
+  framing_gap: "\u2194\uFE0F",
+  sentiment_split: "\u{1F4CA}",
+  volume_leader: "\u{1F4F0}",
+  consensus_keyword: "\u{1F511}"
+};
+var COVERAGE_INSIGHT_LABELS = {
+  most_charged: "Most charged",
+  most_neutral: "Most neutral",
+  framing_gap: "Biggest divide",
+  sentiment_split: "Sentiment split",
+  volume_leader: "Coverage leader",
+  consensus_keyword: "Common focus"
+};
+function formatCoverageInsightParts(insight) {
+  const kind = insight.kind;
+  const icon = COVERAGE_INSIGHT_ICONS[kind] || "\u2022";
+  const headline = COVERAGE_INSIGHT_LABELS[kind] || String(kind).replace(/_/g, " ");
+  if (kind === "most_charged") {
+    const score = Number(insight.score);
+    const s2 = Number.isFinite(score) ? score.toFixed(1) : insight.score;
+    const val = `${insight.outlet} scored ${s2}/10 emotional intensity`;
+    const tail = "\u2014 highest charged coverage";
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "most_neutral") {
+    const score = Number(insight.score);
+    const s2 = Number.isFinite(score) ? score.toFixed(1) : insight.score;
+    const val = `${insight.outlet} scored ${s2}/10`;
+    const tail = "\u2014 most measured, factual framing";
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "framing_gap") {
+    const g = Number(insight.gap);
+    const gapTxt = Number.isFinite(g) ? g.toFixed(2) : insight.gap;
+    const val = `${insight.outlet_a} and ${insight.outlet_b} are ${gapTxt} bias points apart`;
+    const tail = "\u2014 widest perspective gap";
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "sentiment_split") {
+    const la = Number(insight.left_avg);
+    const ra = Number(insight.right_avg);
+    const lv = Number.isFinite(la) ? la.toFixed(2) : insight.left_avg;
+    const rv = Number.isFinite(ra) ? ra.toFixed(2) : insight.right_avg;
+    const diff = Math.abs(ra - la);
+    const pct = Math.min(100, Math.round(diff * 100));
+    const label = String(insight.label || "");
+    const side = label.includes("right") || label.includes("Right") ? "Right-leaning" : "Left-leaning";
+    const val = `${side} outlets framed this ~${pct}% more positively`;
+    const tail = `\u2014 left avg ${lv}, right avg ${rv}`;
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "volume_leader") {
+    const val = `${insight.outlet} published the most articles (${insight.count}) on this topic`;
+    const tail = `\u2014 ${insight.label || "volume leader"}`;
+    return { icon, headline, value: val, description: tail };
+  }
+  if (kind === "consensus_keyword") {
+    const w = String(insight.word || "").trim() || "\u2014";
+    const val = `All outlets emphasized the word '${w}'`;
+    const tail = "\u2014 shared vocabulary across framing summaries";
+    return { icon, headline, value: val, description: tail };
+  }
+  return { icon, headline, value: "", description: "" };
+}
+function WhatTheNumbersRevealCard({ insights }) {
+  const list = Array.isArray(insights) ? insights : [];
+  if (list.length === 0) return null;
+  return /* @__PURE__ */ import_react36.default.createElement("section", { id: "coverage-insights", className: "what-numbers-reveal card" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow" }, "Insights"), /* @__PURE__ */ import_react36.default.createElement("h2", null, "What The Numbers Reveal"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "what-numbers-reveal-sub" }, "Data-driven insights from coverage analysis"), /* @__PURE__ */ import_react36.default.createElement("ul", { className: "coverage-insight-list", role: "list" }, list.map((insight, idx) => {
+    const parts = formatCoverageInsightParts(insight);
+    const key = `${insight.kind}-${idx}`;
+    const isLast = idx === list.length - 1;
+    return /* @__PURE__ */ import_react36.default.createElement(
+      "li",
+      {
+        key,
+        className: `coverage-insight-row${isLast ? " coverage-insight-row--last" : ""}`
+      },
+      /* @__PURE__ */ import_react36.default.createElement("span", { className: "coverage-insight-icon", "aria-hidden": true }, parts.icon),
+      /* @__PURE__ */ import_react36.default.createElement("span", { className: "coverage-insight-text" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "coverage-insight-head" }, parts.headline, ":"), " ", /* @__PURE__ */ import_react36.default.createElement("strong", { className: "coverage-insight-value" }, parts.value), parts.description ? /* @__PURE__ */ import_react36.default.createElement(import_react36.default.Fragment, null, " ", /* @__PURE__ */ import_react36.default.createElement("span", { className: "coverage-insight-desc" }, parts.description)) : null)
+    );
+  })), /* @__PURE__ */ import_react36.default.createElement("p", { className: "what-numbers-reveal-footer micro-muted" }, "Insights calculated from article scores and framing data. No AI generation involved."));
 }
 function DevelopingStoryBanner() {
   return /* @__PURE__ */ import_react36.default.createElement("div", { className: "developing-story-banner", role: "status" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-icon", "aria-hidden": true }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-dot" }), /* @__PURE__ */ import_react36.default.createElement("span", { className: "developing-pulse-ring" })), /* @__PURE__ */ import_react36.default.createElement("p", { className: "developing-story-copy" }, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Developing Story:"), " This topic has emerging coverage. Analysis will refine as more sources report."));
@@ -53700,12 +53709,7 @@ function readAcrossBorderColor(label) {
   if (b === "right") return "#EF4444";
   return "#6B7280";
 }
-function missingAngleHasRevealContent(ma) {
-  if (!ma || typeof ma !== "object") return false;
-  const v = ma.value;
-  return v != null && String(v).trim() !== "";
-}
-function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
+function ReadAcrossBiasOverlay({ topic, outlets, onClose }) {
   const sorted = (0, import_react36.useMemo)(() => {
     const list = Array.isArray(outlets) ? [...outlets] : [];
     return list.sort((a2, b) => {
@@ -53719,7 +53723,6 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
     });
   }, [outlets]);
   const [readSet, setReadSet] = (0, import_react36.useState)(() => /* @__PURE__ */ new Set());
-  const [missingExpanded, setMissingExpanded] = (0, import_react36.useState)(false);
   (0, import_react36.useEffect)(() => {
     if (!topic) return;
     const next = /* @__PURE__ */ new Set();
@@ -53727,7 +53730,6 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
       if (readAcrossIsMarked(topic, o.source)) next.add(o.source);
     }
     setReadSet(next);
-    setMissingExpanded(false);
   }, [topic, sorted]);
   (0, import_react36.useEffect)(() => {
     const onKey = (e) => {
@@ -53773,7 +53775,6 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
     }
     return pick;
   }, [intensityRanked]);
-  const showMissingAngle = missingAngleHasRevealContent(missingAngle);
   const toggleRead = (source, checked) => {
     readAcrossSetMarked(topic, source, checked);
     setReadSet((prev) => {
@@ -53844,30 +53845,14 @@ function ReadAcrossBiasOverlay({ topic, outlets, missingAngle, onClose }) {
           }
         ), "Mark as read"))
       );
-    })), /* @__PURE__ */ import_react36.default.createElement("section", { className: "read-across-framing-diff", "aria-labelledby": "framing-diff-heading" }, /* @__PURE__ */ import_react36.default.createElement("h3", { id: "framing-diff-heading" }, "How framing differs across the spectrum"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-rows" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-row" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-prompt" }, "Most charged language:"), mostCharged ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-body" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-outlet" }, mostCharged.source), outletHeadlineForCompare(mostCharged) ? /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-quote" }, "\u201C", outletHeadlineForCompare(mostCharged), "\u201D") : null) : null), /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-row" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-prompt" }, "Most neutral framing:"), mostNeutralFraming ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-body" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-outlet" }, mostNeutralFraming.source), outletHeadlineForCompare(mostNeutralFraming) ? /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-quote" }, "\u201C", outletHeadlineForCompare(mostNeutralFraming), "\u201D") : null) : null))), showMissingAngle ? /* @__PURE__ */ import_react36.default.createElement("section", { className: "read-across-missing-wrap", "aria-labelledby": "missing-angle-toggle" }, /* @__PURE__ */ import_react36.default.createElement(
-      "button",
-      {
-        type: "button",
-        id: "missing-angle-toggle",
-        className: "read-across-missing-toggle",
-        "aria-expanded": missingExpanded,
-        onClick: () => setMissingExpanded((v) => !v)
-      },
-      "What everyone missed \u2192"
-    ), /* @__PURE__ */ import_react36.default.createElement(
-      "div",
-      {
-        className: `read-across-missing-expand${missingExpanded ? " is-expanded" : ""}`
-      },
-      /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-missing-inner" }, missingAngle?.value != null && String(missingAngle.value).trim() ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "read-across-missing-text" }, String(missingAngle.value).trim()) : null, missingAngle?.reasoning != null && String(missingAngle.reasoning).trim() ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "read-across-missing-reason" }, String(missingAngle.reasoning).trim()) : null)
-    )) : null))
+    })), /* @__PURE__ */ import_react36.default.createElement("section", { className: "read-across-framing-diff", "aria-labelledby": "framing-diff-heading" }, /* @__PURE__ */ import_react36.default.createElement("h3", { id: "framing-diff-heading" }, "How framing differs across the spectrum"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-rows" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-row" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-prompt" }, "Most charged language:"), mostCharged ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-body" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-outlet" }, mostCharged.source), outletHeadlineForCompare(mostCharged) ? /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-quote" }, "\u201C", outletHeadlineForCompare(mostCharged), "\u201D") : null) : null), /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-row" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-prompt" }, "Most neutral framing:"), mostNeutralFraming ? /* @__PURE__ */ import_react36.default.createElement("div", { className: "read-across-compare-body" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-outlet" }, mostNeutralFraming.source), outletHeadlineForCompare(mostNeutralFraming) ? /* @__PURE__ */ import_react36.default.createElement("span", { className: "read-across-compare-quote" }, "\u201C", outletHeadlineForCompare(mostNeutralFraming), "\u201D") : null) : null)))))
   );
 }
 function Header({ onStartAnalysis, activeNav }) {
   return /* @__PURE__ */ import_react36.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "brand-lockup" }, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "brand brand-home-link", style: { textDecoration: "none", color: "inherit" } }, "NewsLens"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "brand-tag" }, "Truth in headlines. Bias in framing.")), /* @__PURE__ */ import_react36.default.createElement("nav", null, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: activeNav === "dashboard" ? "active" : void 0 }, "Dashboard"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#topics", className: activeNav === "topics" ? "active" : void 0 }, "Topics"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#outlets", className: activeNav === "outlets" ? "active" : void 0 }, "Outlets"), /* @__PURE__ */ import_react36.default.createElement("a", { href: "#methodology", className: activeNav === "methodology" ? "active" : void 0 }, "Methodology")), /* @__PURE__ */ import_react36.default.createElement("button", { className: "cta", onClick: onStartAnalysis }, "Start Analysis"));
 }
 function MethodologyPage() {
-  return /* @__PURE__ */ import_react36.default.createElement("main", { className: "methodology-page", "aria-labelledby": "methodology-doc-h1" }, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "methodology-back" }, "\u2190 Dashboard"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow", style: { marginBottom: 12 } }, "Transparency"), /* @__PURE__ */ import_react36.default.createElement("h1", { id: "methodology-doc-h1", className: "methodology-doc-title" }, "Methodology"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "methodology-lede" }, "NewsLens compares how major outlets cover the same story. Here is how we analyze sentiment and bias, which sources we include, how we use AI for the Missing Angle, and what you should not expect from this tool."), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-bias" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-bias", className: "methodology-section-title" }, "How We Detect Bias"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "We score ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "sentiment"), " using the Hugging Face model", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "cardiffnlp/twitter-roberta-base-sentiment"), "\u2014the same RoBERTa family many researchers use for social text. It classifies tone toward positive, neutral, or negative so we can summarize emotional framing alongside politics."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bias scoring"), " does not rely on a single dial. We combine outputs from our bias-oriented ML signals with ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "keyword framing analysis"), ": the language patterns outlets tend to use when they lean left versus right on an issue. Left-leaning framing often surfaces through vocabulary that emphasizes systemic critique, collective action, or progressive policy frames; right-leaning framing often shows up in language that stresses tradition, national security, market-led solutions, or conservative policy cues. No keyword list is perfect\u2014but pairing statistical models with explicit linguistic cues helps catch framing that scalar scores alone can miss."), /* @__PURE__ */ import_react36.default.createElement("p", null, "Each article receives a position on a continuous scale. We aggregate those scores ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "per outlet"), " ", "so you see an outlet-level bias estimate rather than a single cherry-picked headline. The headline shown in cards may be illustrative; the score reflects the batch of articles we analyzed for your topic."), /* @__PURE__ */ import_react36.default.createElement("p", null, "The ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "bias axis"), " is normalized to a ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.0\u20131.0"), " scale for readability:", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.0"), " indicates relatively left-leaning coverage for that topic, ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.5"), " sits near the center, and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "1.0"), " indicates relatively right-leaning coverage. Treat these numbers as comparative signals across outlets on the same story\u2014not as absolute moral judgments about a publication."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-outlets" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-outlets", className: "methodology-section-title" }, "How We Choose Outlets"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "We maintain a ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "tiered allowlist of credible domains"), ". Only articles from those domains can appear in NewsLens. That keeps comparisons grounded in organizations that operate with editorial processes and broad public visibility\u2014the kind of outlets where bias analysis is most meaningful."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 1 \u2014 Wire services:"), " Associated Press and Reuters-style wire origins (e.g.", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "AP"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Reuters"), ") provide baseline factual filing many others republish."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 2 \u2014 International broadcasters:"), " Outlets such as ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "BBC"), ",", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "NPR"), ", and comparable global broadcasters offer sustained reporting with public-service or international mandates."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 3 \u2014 Major newspapers:"), " Large national and international papers\u2014examples include", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The Guardian"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The New York Times"), ", and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The Wall Street Journal"), "\u2014carry investigative depth and consistent politics desks."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 4 \u2014 Cable and digital news:"), " Major cable and digital brands such as", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "CNN"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Fox News"), ", and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bloomberg"), " represent high-reach U.S. and global audiences with distinct editorial identities."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 5 \u2014 International credible outlets:"), " We also include respected regional leaders\u2014e.g.", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Indian Express"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Dawn"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "South China Morning Post"), ", and similar titles\u2014so international angles are not invisible when they publish in English on a global topic."), /* @__PURE__ */ import_react36.default.createElement("p", null, "For any topic, we surface the ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "top five outlets by article volume"), " drawn exclusively from this verified list (subject to who actually published on your query in our fetch window). We cap visibility so the dashboard stays readable and so each bar in our charts reflects enough text to score reliably."), /* @__PURE__ */ import_react36.default.createElement("p", null, "We deliberately do ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "not"), " scrape the entire web. Bias comparison only works when outlets have meaningful reach and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "editorial accountability"), ": corrections policies, bylines, and reputational stakes. Narrowing to verified domains trades completeness for a fairer apples-to-apples contrast."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-missing" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-missing", className: "methodology-section-title" }, "What Is the Missing Angle?"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "After we analyze sentiment and bias across outlets, we compile article summaries and structured signals and send them to a large language model\u2014", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Google Gemini"), " (with sensible fallbacks when quotas bite)."), /* @__PURE__ */ import_react36.default.createElement("p", null, "We ask a single adversarial question: ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "What perspective did all of these outlets collectively fail to foreground?"), " The answer might highlight affected communities who never received a direct quote, historical parallels readers were not given, international viewpoints left out of the U.S.-centric frame, or systemic drivers reduced to one-off events."), /* @__PURE__ */ import_react36.default.createElement("p", null, "The Missing Angle is ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "explicitly labeled as AI-generated editorial analysis"), ". It is not a fact checker and not a prediction\u2014it is a structured prompt to widen your lens after you have seen the spectrum."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-limits" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-limits", className: "methodology-section-title" }, "What We Don't Do (And Why)"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Time window:"), " We currently pull articles from roughly the ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "last 30 days"), ", a constraint driven by how we integrate with NewsAPI on the free tier and by our focus on live news rather than archival history."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bias is imperfect:"), " No model or keyword list captures the full nuance of editorial choices. Scores are heuristics\u2014useful for comparison, dangerous if treated as ground truth about a person's character or an outlet's worth."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Coverage is bounded:"), " We intentionally limit sources to our allowlist\u2014today roughly", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "35 verified credible domains"), ". If your favorite niche blog is missing, that is by design, not an oversight of quality everywhere else on the web."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Thin data:"), " If only a handful of articles match your topic, averages can swing with one outlier headline. Treat low-volume topics as directional, not definitive."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "AI caveats:"), " Missing Angle prose is machine-generated synthesis. Use it as a", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "starting prompt for curiosity"), ", not a final verdict\u2014especially on sensitive stories."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-why" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-why", className: "methodology-section-title" }, "Why We Built This"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "Media literacy matters. Most people still get news primarily from one habitual source\u2014and algorithms reinforce that comfort. When you read the ", /* @__PURE__ */ import_react36.default.createElement("em", null, "same story"), " refracted through several bias lenses, you practice the habit of asking who is included, who is quoted, and which causes get named. We built NewsLens because we believe ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "transparency about how we analyze"), " is as important as the charts themselves: when you know the limits of the model, you can use it without being used by it."))));
+  return /* @__PURE__ */ import_react36.default.createElement("main", { className: "methodology-page", "aria-labelledby": "methodology-doc-h1" }, /* @__PURE__ */ import_react36.default.createElement("a", { href: "#dashboard", className: "methodology-back" }, "\u2190 Dashboard"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "eyebrow", style: { marginBottom: 12 } }, "Transparency"), /* @__PURE__ */ import_react36.default.createElement("h1", { id: "methodology-doc-h1", className: "methodology-doc-title" }, "Methodology"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "methodology-lede" }, "NewsLens compares how major outlets cover the same story. Here is how we analyze sentiment and bias, which sources we include, how we derive data-driven coverage insights, and what you should not expect from this tool."), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-bias" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-bias", className: "methodology-section-title" }, "How We Detect Bias"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "We score ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "sentiment"), " using the Hugging Face model", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "cardiffnlp/twitter-roberta-base-sentiment"), "\u2014the same RoBERTa family many researchers use for social text. It classifies tone toward positive, neutral, or negative so we can summarize emotional framing alongside politics."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bias scoring"), " does not rely on a single dial. We combine outputs from our bias-oriented ML signals with ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "keyword framing analysis"), ": the language patterns outlets tend to use when they lean left versus right on an issue. Left-leaning framing often surfaces through vocabulary that emphasizes systemic critique, collective action, or progressive policy frames; right-leaning framing often shows up in language that stresses tradition, national security, market-led solutions, or conservative policy cues. No keyword list is perfect\u2014but pairing statistical models with explicit linguistic cues helps catch framing that scalar scores alone can miss."), /* @__PURE__ */ import_react36.default.createElement("p", null, "Each article receives a position on a continuous scale. We aggregate those scores ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "per outlet"), " ", "so you see an outlet-level bias estimate rather than a single cherry-picked headline. The headline shown in cards may be illustrative; the score reflects the batch of articles we analyzed for your topic."), /* @__PURE__ */ import_react36.default.createElement("p", null, "The ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "bias axis"), " is normalized to a ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.0\u20131.0"), " scale for readability:", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.0"), " indicates relatively left-leaning coverage for that topic, ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "0.5"), " sits near the center, and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "1.0"), " indicates relatively right-leaning coverage. Treat these numbers as comparative signals across outlets on the same story\u2014not as absolute moral judgments about a publication."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-outlets" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-outlets", className: "methodology-section-title" }, "How We Choose Outlets"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "We maintain a ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "tiered allowlist of credible domains"), ". Only articles from those domains can appear in NewsLens. That keeps comparisons grounded in organizations that operate with editorial processes and broad public visibility\u2014the kind of outlets where bias analysis is most meaningful."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 1 \u2014 Wire services:"), " Associated Press and Reuters-style wire origins (e.g.", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "AP"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Reuters"), ") provide baseline factual filing many others republish."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 2 \u2014 International broadcasters:"), " Outlets such as ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "BBC"), ",", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "NPR"), ", and comparable global broadcasters offer sustained reporting with public-service or international mandates."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 3 \u2014 Major newspapers:"), " Large national and international papers\u2014examples include", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The Guardian"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The New York Times"), ", and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "The Wall Street Journal"), "\u2014carry investigative depth and consistent politics desks."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 4 \u2014 Cable and digital news:"), " Major cable and digital brands such as", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "CNN"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Fox News"), ", and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bloomberg"), " represent high-reach U.S. and global audiences with distinct editorial identities."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Tier 5 \u2014 International credible outlets:"), " We also include respected regional leaders\u2014e.g.", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Indian Express"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "Dawn"), ", ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "South China Morning Post"), ", and similar titles\u2014so international angles are not invisible when they publish in English on a global topic."), /* @__PURE__ */ import_react36.default.createElement("p", null, "For any topic, we surface the ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "top five outlets by article volume"), " drawn exclusively from this verified list (subject to who actually published on your query in our fetch window). We cap visibility so the dashboard stays readable and so each bar in our charts reflects enough text to score reliably."), /* @__PURE__ */ import_react36.default.createElement("p", null, "We deliberately do ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "not"), " scrape the entire web. Bias comparison only works when outlets have meaningful reach and ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "editorial accountability"), ": corrections policies, bylines, and reputational stakes. Narrowing to verified domains trades completeness for a fairer apples-to-apples contrast."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-insights" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-insights", className: "methodology-section-title" }, "What The Numbers Reveal"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "The ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "What The Numbers Reveal"), " card summarizes patterns already computed for your search: which outlet sounds most emotionally charged or most neutral, how far apart the ideological extremes sit on the bias axis, whether left- and right-leaning outlets diverge on average sentiment, who published the most articles, and which substantive terms recur across framing summaries."), /* @__PURE__ */ import_react36.default.createElement("p", null, "These insights are ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "deterministic summaries of scores and text we already analyzed"), ". No extra API calls and no generative editorial layer\u2014so the card stays fast, reproducible, and independent of LLM quotas."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-limits" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-limits", className: "methodology-section-title" }, "What We Don't Do (And Why)"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Time window:"), " We currently pull articles from roughly the ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "last 30 days"), ", a constraint driven by how we integrate with NewsAPI on the free tier and by our focus on live news rather than archival history."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Bias is imperfect:"), " No model or keyword list captures the full nuance of editorial choices. Scores are heuristics\u2014useful for comparison, dangerous if treated as ground truth about a person's character or an outlet's worth."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Coverage is bounded:"), " We intentionally limit sources to our allowlist\u2014today roughly", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "35 verified credible domains"), ". If your favorite niche blog is missing, that is by design, not an oversight of quality everywhere else on the web."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Thin data:"), " If only a handful of articles match your topic, averages can swing with one outlier headline. Treat low-volume topics as directional, not definitive."), /* @__PURE__ */ import_react36.default.createElement("p", null, /* @__PURE__ */ import_react36.default.createElement("strong", null, "Interpretation:"), " Charts and insight lines summarize model outputs and heuristics. Use them as a", " ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "starting point for curiosity"), ", not a final verdict\u2014especially on sensitive stories."))), /* @__PURE__ */ import_react36.default.createElement("section", { className: "methodology-section", "aria-labelledby": "m-why" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "m-why", className: "methodology-section-title" }, "Why We Built This"), /* @__PURE__ */ import_react36.default.createElement("div", { className: "methodology-body" }, /* @__PURE__ */ import_react36.default.createElement("p", null, "Media literacy matters. Most people still get news primarily from one habitual source\u2014and algorithms reinforce that comfort. When you read the ", /* @__PURE__ */ import_react36.default.createElement("em", null, "same story"), " refracted through several bias lenses, you practice the habit of asking who is included, who is quoted, and which causes get named. We built NewsLens because we believe ", /* @__PURE__ */ import_react36.default.createElement("strong", null, "transparency about how we analyze"), " is as important as the charts themselves: when you know the limits of the model, you can use it without being used by it."))));
 }
 function ResultsHeader({ topic, outlets, spectrumExtremes, onOpenReadAcross }) {
   const dist = (0, import_react36.useMemo)(() => outletBiasSpectrumPercentages(outlets), [outlets]);
@@ -53940,7 +53925,7 @@ function AnalysisResults({
       compareSelection,
       onCompareClick
     }
-  ), /* @__PURE__ */ import_react36.default.createElement(HeadlineComparison, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-grid" }, /* @__PURE__ */ import_react36.default.createElement(SentimentDistribution, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "timeline-column" }, /* @__PURE__ */ import_react36.default.createElement(Timeline, { timeline, outlets, outletColorMap }), /* @__PURE__ */ import_react36.default.createElement(TopicTrendChart, { topic: data.topic || "", outlets, outletColorMap }))), /* @__PURE__ */ import_react36.default.createElement(MissingAngleCard, { missingAngle: data.missing_angle })) : null);
+  ), /* @__PURE__ */ import_react36.default.createElement(HeadlineComparison, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "chart-grid" }, /* @__PURE__ */ import_react36.default.createElement(SentimentDistribution, { outlets }), /* @__PURE__ */ import_react36.default.createElement("div", { className: "timeline-column" }, /* @__PURE__ */ import_react36.default.createElement(Timeline, { timeline, outlets, outletColorMap }), /* @__PURE__ */ import_react36.default.createElement(TopicTrendChart, { topic: data.topic || "", outlets, outletColorMap }))), /* @__PURE__ */ import_react36.default.createElement(WhatTheNumbersRevealCard, { insights: data.coverage_insights })) : null);
 }
 function Hero({
   searchInput,
@@ -54175,7 +54160,6 @@ function App() {
     {
       topic: data.topic || "",
       outlets: data.outlets || [],
-      missingAngle: data.missing_angle,
       onClose: () => setReadAcrossOpen(false)
     }
   ) : null));
