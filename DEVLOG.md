@@ -824,3 +824,12 @@ Introduce **`normalizeTopicForApi(raw)`** (hyphens/underscores → spaces, colla
 - **`npm run build`** in **`frontend/`**: success.
 
 
+## [2026-05-09] — “What’s actually in the headlines today?”
+
+We had been surfacing “trending” suggestions from our own database usage, which felt stale next to the product promise of mapping live news. The goal was to swap that for something grounded in what credible outlets are publishing *right now*, without hammering NewsAPI on every page load or exposing fake personalization.
+
+The backend now exposes **`GET /todays-topics`**. It pulls US English top headlines from NewsAPI (20 articles), keeps only URLs whose domains appear in **`credible_domains.py`**, derives a short topic phrase from each headline by stripping a fixed stopword list and taking the first two or three content words, dedupes, and returns up to six labels. Results sit behind a simple **one-hour in-memory cache** so refreshes stay cheap. When the key is missing or nothing passes the credibility filter, the API returns an empty list and the UI quietly substitutes a small curated default list—same six phrases every user sees when the wire is quiet.
+
+On the frontend, the hero section asks for **`/todays-topics` on load**, shows **four skeleton chips** while that request is in flight, and retitles the strip **“IN THE NEWS TODAY.”** Chips behave like before: one click fills the search box and runs analyze. We removed the **Recent Searches** block entirely (no more history chips or localStorage-backed list there), and **`npm run build`** passes.
+
+

@@ -8,6 +8,9 @@ from datetime import datetime, timedelta, timezone
 import random
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
+
+import httpx
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
@@ -31,6 +34,7 @@ _extra_cors = [
 _CORS_ALLOW_ORIGINS = list(dict.fromkeys(_DEV_CORS_ORIGINS + _extra_cors))
 
 from .bias_utils import bias_distribution_from_outlets, bias_label_from_axis, extrem_bias_outlets
+from .credible_domains import CREDIBLE_DOMAINS
 from .database import Article, ArticleScore, TopicAnalysis, create_tables, get_db, normalize_topic
 from .framing_extract import clean_text, get_framing_summary
 from .llm_analyzer import LLMAnalyzer
@@ -571,6 +575,147 @@ def _trending_topics_list(db: Session) -> list[dict]:
     return out[:8]
 
 
+_TODAYS_TOPICS_STOPWORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "has",
+        "have",
+        "had",
+        "be",
+        "been",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "do",
+        "does",
+        "did",
+        "not",
+        "no",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "its",
+        "it",
+        "this",
+        "that",
+        "these",
+        "those",
+        "he",
+        "she",
+        "they",
+        "we",
+        "you",
+    }
+)
+
+_CREDIBLE_DOMAIN_SET = frozenset(CREDIBLE_DOMAINS)
+
+_todays_topics_cache: tuple[list[str] | None, datetime | None] = (None, None)
+
+
+def _domain_from_article_url(url: str | None) -> str | None:
+    if not url or not isinstance(url, str):
+        return None
+    try:
+        host = urlparse(url.strip()).netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host if host else None
+    except Exception:
+        return None
+
+
+def _headline_to_topic_label(title: str) -> str | None:
+    if not title or not str(title).strip():
+        return None
+    tokens = re.findall(r"[A-Za-z0-9]+", str(title))
+    lowered = [t.lower() for t in tokens]
+    meaningful = [t for t in lowered if t not in _TODAYS_TOPICS_STOPWORDS]
+    if not meaningful:
+        return None
+    if len(meaningful) == 1:
+        chunk = meaningful[:1]
+    elif len(meaningful) == 2:
+        chunk = meaningful[:2]
+    else:
+        chunk = meaningful[:3]
+    return " ".join(chunk)
+
+
+def _fetch_todays_topics_from_newsapi() -> list[str]:
+    api_key = os.getenv("NEWSAPI_KEY")
+    if not api_key or "your_newsapi_key_here" in api_key:
+        return []
+
+    url = "https://newsapi.org/v2/top-headlines"
+    params = {"country": "us", "language": "en", "pageSize": 20, "apiKey": api_key}
+
+    try:
+        with httpx.Client(timeout=25.0) as client:
+            r = client.get(url, params=params)
+            r.raise_for_status()
+            payload = r.json()
+    except Exception:
+        return []
+
+    if payload.get("status") != "ok":
+        return []
+
+    articles = payload.get("articles") or []
+    seen_keys: set[str] = set()
+    out: list[str] = []
+
+    for art in articles:
+        if len(out) >= 6:
+            break
+        if not isinstance(art, dict):
+            continue
+        dom = _domain_from_article_url(art.get("url"))
+        if not dom or dom not in _CREDIBLE_DOMAIN_SET:
+            continue
+        label = _headline_to_topic_label(art.get("title") or "")
+        if not label:
+            continue
+        key = label.lower().strip()
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        out.append(label)
+
+    return out
+
+
+def _get_todays_topics_cached() -> list[str]:
+    global _todays_topics_cache
+    now = datetime.now(timezone.utc)
+    cached_topics, expires_at = _todays_topics_cache
+    if cached_topics is not None and expires_at is not None and now < expires_at:
+        return list(cached_topics)
+    fresh = _fetch_todays_topics_from_newsapi()
+    _todays_topics_cache = (list(fresh), now + timedelta(hours=1))
+    return list(fresh)
+
+
 @router.get("/health", response_model=HealthResponse)
 def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     db.execute(text("SELECT 1"))
@@ -803,6 +948,12 @@ def get_trending_topics(db: Session = Depends(get_db)) -> AnalyzeResponse:
         "data": {"topics": _trending_topics_list(db)},
         "error": None,
     }
+
+
+@router.get("/todays-topics", response_model=AnalyzeResponse)
+def get_todays_topics() -> AnalyzeResponse:
+    topics = _get_todays_topics_cached()
+    return {"success": True, "data": {"topics": topics}, "error": None}
 
 
 app.include_router(router)
