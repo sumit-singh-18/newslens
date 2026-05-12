@@ -918,3 +918,20 @@ Rebuilt the **`SuggestOutletSection`** styling to match the rest of the app. **`
 No backend changes. **`npm run build`** (**`frontend/`**): success (**`bundle.js`** 2.1 MB).
 
 
+## [2026-05-11] — Suggest an Outlet: progress-bar loading state
+
+**`frontend/app.js`** only — no backend or **`styles.css`** changes (all visuals use inline styles so the block is self-contained and easy to remove).
+
+Swapped the **`Check Credibility`** button's text-flip loading indicator for a **progress bar below the input row**. The OLD ternary (**`{loadingLookup ? "Checking…" : "Check Credibility"}`**) is kept commented in place under a **`OLD LOADING STATE - restore if needed`** marker; the button text is now always **`Check Credibility`**, remains **`disabled`** while **`loadingLookup`** is true, and gets an inline **`opacity: 0.6`** override (above the **`:disabled`** CSS default of **`0.5`**) per spec.
+
+The new progress bar is a 4-phase state machine driven off **`loadingLookup`**:
+- **`starting`** — width **`0%`**, no transition (sets initial frame).
+- **`filling`** — width **`90%`**, **`width 2.5s ease-out`** (advances on the next animation frame so the transition actually triggers).
+- **`completing`** — width **`100%`**, **`width 0.25s ease-out`** (jumps to 100 % when the response lands).
+- **`fading`** — container opacity **`0`** with **`opacity 0.3s ease-out`**, then unmounts at **`t=600ms`**.
+
+Visuals: full-width container, 6 px / 3 px-radius track on **`#E5E7EB`** with a **`linear-gradient(90deg, #3B82F6 0%, #1A1A2E 100%)`** fill, **`overflow: hidden`** for clean edges. The status caption underneath (**`text-xs`** at **`#6B7280`**, **`role="status"`** / **`aria-live="polite"`** on the container) cycles a 4-message array — **`Connecting to Media Bias Fact Check... → Analyzing credibility signals... → Fetching bias rating... → Almost done...`** — every **`800ms`** via a **`setInterval`** that's torn down with the loading state.
+
+Revert: uncomment the OLD ternary inside the button, delete the inline **`style={loadingLookup ? { opacity: 0.6 } : undefined}`** on the button, and remove the **`PROGRESS_LABELS`** constant, the two **`useEffect`**s + **`progressPhase`**/**`progressLabelIdx`** state, and the **`{progressVisible && (...)}`** block. **`npm run build`** (**`frontend/`**): success (**`bundle.js`** 2.1 MB), no lint errors.
+
+

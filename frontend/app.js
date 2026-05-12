@@ -2114,6 +2114,14 @@ function credibilityTone(credibility) {
   return "neutral";
 }
 
+/** Rotating status labels shown beneath the credibility-check progress bar. */
+const PROGRESS_LABELS = [
+  "Connecting to Media Bias Fact Check...",
+  "Analyzing credibility signals...",
+  "Fetching bias rating...",
+  "Almost done...",
+];
+
 /**
  * Case-insensitive match of a user-typed outlet name against the verified
  * `CREDIBLE_SOURCE_TIERS` list (compared against both display names and domains,
@@ -2166,6 +2174,60 @@ function SuggestOutletSection() {
 
   const showSubmitForm =
     (isFound || isNotFound) && !existingMatch && submitState !== "success";
+
+  // NEW: Progress bar loading state
+  // To revert: uncomment OLD LOADING STATE in the lookup-row button below
+  // and remove this section (state, effects, and the progress-bar JSX).
+  //
+  // Phases: "idle" (hidden) → "starting" (width 0, no transition) →
+  // "filling" (width 90% over 2.5s ease-out) → "completing" (width 100%
+  // over 0.25s) → "fading" (opacity 0 over 0.3s) → "idle".
+  const [progressPhase, setProgressPhase] = useState("idle");
+  const [progressLabelIdx, setProgressLabelIdx] = useState(0);
+
+  useEffect(() => {
+    if (loadingLookup) {
+      setProgressPhase("starting");
+      setProgressLabelIdx(0);
+      const raf = requestAnimationFrame(() => setProgressPhase("filling"));
+      return () => cancelAnimationFrame(raf);
+    }
+    // Loading just ended: only animate completion if the bar was on screen.
+    setProgressPhase((p) => (p === "idle" ? "idle" : "completing"));
+    const fadeTimer = setTimeout(() => {
+      setProgressPhase((p) => (p === "idle" ? "idle" : "fading"));
+    }, 250);
+    const hideTimer = setTimeout(() => setProgressPhase("idle"), 600);
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(hideTimer);
+    };
+  }, [loadingLookup]);
+
+  useEffect(() => {
+    if (!loadingLookup) return undefined;
+    const t = setInterval(() => {
+      setProgressLabelIdx((i) => (i + 1) % PROGRESS_LABELS.length);
+    }, 800);
+    return () => clearInterval(t);
+  }, [loadingLookup]);
+
+  const progressVisible = progressPhase !== "idle";
+  const progressFillStyle = (() => {
+    switch (progressPhase) {
+      case "starting":
+        return { width: "0%", transition: "none" };
+      case "filling":
+        return { width: "90%", transition: "width 2.5s ease-out" };
+      case "completing":
+        return { width: "100%", transition: "width 0.25s ease-out" };
+      case "fading":
+        return { width: "100%", transition: "none" };
+      default:
+        return { width: "0%" };
+    }
+  })();
+  const progressContainerOpacity = progressPhase === "fading" ? 0 : 1;
 
   async function handleCheck() {
     const cleaned = name.trim();
@@ -2258,10 +2320,61 @@ function SuggestOutletSection() {
           className="suggest-outlet-button"
           onClick={handleCheck}
           disabled={!name.trim() || loadingLookup}
+          style={loadingLookup ? { opacity: 0.6 } : undefined}
         >
-          {loadingLookup ? "Checking…" : "Check Credibility"}
+          {/* OLD LOADING STATE - restore if needed */}
+          {/* {loadingLookup ? "Checking…" : "Check Credibility"} */}
+          Check Credibility
         </button>
       </div>
+
+      {/* NEW: Progress bar loading state */}
+      {/* To revert: uncomment OLD LOADING STATE above and remove this section */}
+      {progressVisible && (
+        <div
+          className="suggest-outlet-progress"
+          role="status"
+          aria-live="polite"
+          style={{
+            marginTop: 12,
+            width: "100%",
+            opacity: progressContainerOpacity,
+            transition: "opacity 0.3s ease-out",
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: "100%",
+              height: 6,
+              borderRadius: 3,
+              background: "#E5E7EB",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                borderRadius: 3,
+                background:
+                  "linear-gradient(90deg, #3B82F6 0%, #1A1A2E 100%)",
+                ...progressFillStyle,
+              }}
+            />
+          </div>
+          <p
+            style={{
+              marginTop: 8,
+              marginBottom: 0,
+              fontSize: "0.75rem",
+              lineHeight: 1.4,
+              color: "#6B7280",
+            }}
+          >
+            {PROGRESS_LABELS[progressLabelIdx]}
+          </p>
+        </div>
+      )}
 
       {lookupError && (
         <p className="suggest-outlet-inline-error" role="status">
