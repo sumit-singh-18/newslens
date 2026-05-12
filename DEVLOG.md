@@ -903,3 +903,8 @@ Added **`OutletsPage`** with **`CREDIBLE_SOURCE_TIERS`** in **`frontend/app.js`*
 - **`npm run build`** (**`frontend/`**): success (**`bundle.js`** 2.1 MB).
 
 
+## [2026-05-11] — Suggest an Outlet: UI redesign
+
+Rebuilt the **`SuggestOutletSection`** styling to match the rest of the app. **`frontend/styles.css`**: container is now centered (**`max-width: 600px`**) with a **`48px`** top margin, **`32px`** top padding, and a subtle **`1px solid #E5E7EB`** divider — no glass card; section heading is **1.25rem / 700 / #1A1A2E** with an **`8px`** subtitle gap. The lookup row uses the dashboard search-bar styling (**`--card-bg`**, **`--card-shadow`**, rounded **24px**, **`93c5fd`** focus ring) paired with a **`#111827`** pill button matching **Analyze**. Result card: flat white, **`12px`** radius, **`#E5E7EB`** border, **`20px`** padding; ratings collapse into three rounded-full pills (**Bias**, **Factual** = neutral gray; **Credibility** = green / amber / red mapped from HIGH / MEDIUM / LOW). MBFC source rendered as a small **`#3B82F6`** link with a trailing arrow. The submission form sits in its own matching white card with stacked **Domain** input and **Why add this?** 3-row textarea, both full width, and a full-width navy **Submit for Review** button (**12px** top margin). Success state replaces the form with a green-tinted card containing a circular **`✓`** badge and centered "Thanks! We'll review your suggestion." message. **`frontend/app.js`** markup updates were limited to placeholder text, pill layout, the 3-row textarea, and the success card; no fetch logic or backend code changed. **`credibilityTone`** gained a **`bad`** branch for LOW. **`npm run build`** (**`frontend/`**): success.
+
+

@@ -2110,6 +2110,7 @@ function credibilityTone(credibility) {
   if (!upper) return "neutral";
   if (upper.includes("HIGH")) return "good";
   if (upper.includes("MEDIUM") || upper.includes("MIXED")) return "warn";
+  if (upper.includes("LOW")) return "bad";
   return "neutral";
 }
 
@@ -2193,18 +2194,20 @@ function SuggestOutletSection() {
       className="suggest-outlet-section"
       aria-labelledby="suggest-outlet-heading"
     >
-      <h2 id="suggest-outlet-heading" className="suggest-outlet-title">
-        Suggest an Outlet
-      </h2>
-      <p className="suggest-outlet-subtitle">
-        Know a credible source we&apos;re missing?
-      </p>
+      <div className="suggest-outlet-header">
+        <h2 id="suggest-outlet-heading" className="suggest-outlet-title">
+          Suggest an Outlet
+        </h2>
+        <p className="suggest-outlet-subtitle">
+          Know a credible source we&apos;re missing?
+        </p>
+      </div>
 
       <div className="suggest-outlet-lookup-row">
         <input
           type="text"
           className="suggest-outlet-input"
-          placeholder="Outlet name (e.g. The Hindu)"
+          placeholder="e.g. The Wire, Africa Report..."
           value={name}
           onChange={(e) => setName(e.target.value)}
           aria-label="Outlet name"
@@ -2230,41 +2233,36 @@ function SuggestOutletSection() {
           <p className="suggest-outlet-result-name">
             {lookupResult.outlet || name.trim()}
           </p>
-          <p className="suggest-outlet-result-meta">
-            <span>
-              Bias: <strong>{lookupResult.bias || "—"}</strong>
+          <div className="suggest-outlet-pill-row">
+            <span className="suggest-outlet-pill">
+              Bias: {lookupResult.bias || "—"}
             </span>
-            <span aria-hidden="true" className="suggest-outlet-divider">
-              |
+            <span className="suggest-outlet-pill">
+              Factual: {lookupResult.factual || "—"}
             </span>
-            <span>
-              Factual: <strong>{lookupResult.factual || "—"}</strong>
-            </span>
-          </p>
-          {lookupResult.credibility && (
-            <p
-              className={`suggest-outlet-cred suggest-outlet-cred--${credibilityTone(
-                lookupResult.credibility
-              )}`}
-            >
-              Credibility: <strong>{lookupResult.credibility}</strong>
-            </p>
-          )}
-          {lookupResult.mbfc_url ? (
-            <p className="suggest-outlet-source-note">
-              Source:{" "}
-              <a
-                href={lookupResult.mbfc_url}
-                target="_blank"
-                rel="noopener noreferrer"
+            {lookupResult.credibility && (
+              <span
+                className={`suggest-outlet-pill suggest-outlet-pill--${credibilityTone(
+                  lookupResult.credibility
+                )}`}
               >
-                Media Bias Fact Check
-              </a>
-            </p>
+                Credibility: {lookupResult.credibility}
+              </span>
+            )}
+          </div>
+          {lookupResult.mbfc_url ? (
+            <a
+              className="suggest-outlet-source-link"
+              href={lookupResult.mbfc_url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Source: Media Bias Fact Check →
+            </a>
           ) : (
-            <p className="suggest-outlet-source-note">
+            <span className="suggest-outlet-source-link suggest-outlet-source-link--inert">
               Source: Media Bias Fact Check
-            </p>
+            </span>
           )}
         </div>
       )}
@@ -2278,37 +2276,41 @@ function SuggestOutletSection() {
 
       {showSubmitForm && (
         <form className="suggest-outlet-form" onSubmit={handleSubmit}>
-          <label
-            className="suggest-outlet-label"
-            htmlFor="suggest-outlet-domain"
-          >
-            Outlet domain
-          </label>
-          <input
-            id="suggest-outlet-domain"
-            type="text"
-            className="suggest-outlet-input"
-            placeholder="thehindu.com"
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            required
-          />
+          <div className="suggest-outlet-field">
+            <label
+              className="suggest-outlet-label"
+              htmlFor="suggest-outlet-domain"
+            >
+              Domain
+            </label>
+            <input
+              id="suggest-outlet-domain"
+              type="text"
+              className="suggest-outlet-input"
+              placeholder="thehindu.com"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              required
+            />
+          </div>
 
-          <label
-            className="suggest-outlet-label"
-            htmlFor="suggest-outlet-reason"
-          >
-            Why should we add this?
-          </label>
-          <textarea
-            id="suggest-outlet-reason"
-            className="suggest-outlet-textarea"
-            rows={4}
-            placeholder="Editorial standards, factual reporting record, regional importance…"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            required
-          />
+          <div className="suggest-outlet-field">
+            <label
+              className="suggest-outlet-label"
+              htmlFor="suggest-outlet-reason"
+            >
+              Why add this?
+            </label>
+            <textarea
+              id="suggest-outlet-reason"
+              className="suggest-outlet-textarea"
+              rows={3}
+              placeholder="Editorial standards, regional importance..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+            />
+          </div>
 
           <button
             type="submit"
@@ -2334,9 +2336,14 @@ function SuggestOutletSection() {
       )}
 
       {submitState === "success" && (
-        <p className="suggest-outlet-success" role="status">
-          Thanks! We&apos;ll review your suggestion.
-        </p>
+        <div className="suggest-outlet-success-card" role="status">
+          <span className="suggest-outlet-success-check" aria-hidden="true">
+            ✓
+          </span>
+          <p className="suggest-outlet-success-message">
+            Thanks! We&apos;ll review your suggestion.
+          </p>
+        </div>
       )}
     </section>
   );
