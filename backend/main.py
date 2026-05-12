@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
+import threading
+import time
 from collections import Counter, defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 import random
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 import httpx
+import requests
+from bs4 import BeautifulSoup
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
@@ -32,24 +37,6 @@ _allowed_origins_raw = os.getenv(
     "http://localhost:5173,http://127.0.0.1:5173",
 )
 _CORS_ALLOW_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
-
-# #region agent log
-try:
-    import json as _agent_json, time as _agent_time
-    with open("/Users/sumit/Documents/NewsLens/.cursor/debug-27d638.log", "a") as _agent_f:
-        _agent_f.write(_agent_json.dumps({
-            "sessionId": "27d638",
-            "id": f"log_{int(_agent_time.time()*1000)}_cors_origins",
-            "timestamp": int(_agent_time.time() * 1000),
-            "location": "backend/main.py:cors_setup",
-            "message": "CORS allow_origins computed at startup",
-            "hypothesisId": "A",
-            "runId": "run1",
-            "data": {"allow_origins": _CORS_ALLOW_ORIGINS},
-        }) + "\n")
-except Exception:
-    pass
-# #endregion
 
 from .bias_utils import (
     bias_distribution_from_outlets,
@@ -1218,6 +1205,187 @@ def get_trending_topics(db: Session = Depends(get_db)) -> AnalyzeResponse:
 def get_todays_topics() -> AnalyzeResponse:
     topics = _get_todays_topics_cached()
     return {"success": True, "data": {"topics": topics}, "error": None}
+
+
+# --- Outlet suggestion + Media Bias Fact Check lookup ----------------------
+
+MBFC_SEARCH_URL = "https://mediabiasfactcheck.com/?s={query}"
+MBFC_HTTP_TIMEOUT = 10.0
+MBFC_CACHE_TTL_SECONDS = 24 * 60 * 60
+MBFC_USER_AGENT = (
+    "Mozilla/5.0 (compatible; NewsLensBot/1.0; +https://newslens.app) "
+    "outlet-lookup"
+)
+
+# In-memory TTL cache: outlet name (lowercased) -> (expires_at_epoch, payload)
+_outlet_lookup_cache: dict[str, tuple[float, dict]] = {}
+_outlet_lookup_lock = threading.Lock()
+
+PENDING_OUTLETS_PATH = Path(__file__).resolve().parent / "pending_outlets.json"
+_pending_outlets_lock = threading.Lock()
+
+# MBFC outlet pages list ratings as "Bias Rating: X", "Factual Reporting: X",
+# "Credibility Rating: X" inline. Each can be followed by either a newline or
+# whitespace before the next label, so stop on label boundary or end-of-line.
+_MBFC_BIAS_RE = re.compile(
+    r"Bias\s*Rating\s*:\s*(.+?)(?=(?:Factual\s*Reporting|Credibility\s*Rating|Country|MBFC|$|\n))",
+    re.IGNORECASE | re.DOTALL,
+)
+_MBFC_FACTUAL_RE = re.compile(
+    r"Factual\s*Reporting\s*:\s*(.+?)(?=(?:Bias\s*Rating|Credibility\s*Rating|Country|MBFC|$|\n))",
+    re.IGNORECASE | re.DOTALL,
+)
+_MBFC_CREDIBILITY_RE = re.compile(
+    r"Credibility\s*Rating\s*:\s*(.+?)(?=(?:Bias\s*Rating|Factual\s*Reporting|Country|MBFC|$|\n))",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _clean_rating_value(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    value = re.sub(r"\s+", " ", raw).strip(" |·-—")
+    return value or None
+
+
+def _find_first_mbfc_result_url(html: str) -> str | None:
+    """Pick the first outlet detail link from an MBFC search results page."""
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return None
+    selectors = (
+        "article h2.entry-title a",
+        "article h3.entry-title a",
+        ".entry-title a",
+        "article h2 a",
+        "article h3 a",
+    )
+    for selector in selectors:
+        for anchor in soup.select(selector):
+            href = anchor.get("href")
+            if not isinstance(href, str) or not href.strip():
+                continue
+            href = href.strip()
+            if href.startswith("/"):
+                href = f"https://mediabiasfactcheck.com{href}"
+            if href.startswith("https://mediabiasfactcheck.com/"):
+                return href
+    return None
+
+
+def _parse_mbfc_detail(html: str) -> dict[str, str | None]:
+    """Parse an MBFC outlet page into (bias, factual, credibility)."""
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return {"bias": None, "factual": None, "credibility": None}
+    text = soup.get_text("\n", strip=True)
+    bias_match = _MBFC_BIAS_RE.search(text)
+    factual_match = _MBFC_FACTUAL_RE.search(text)
+    credibility_match = _MBFC_CREDIBILITY_RE.search(text)
+    return {
+        "bias": _clean_rating_value(bias_match.group(1) if bias_match else None),
+        "factual": _clean_rating_value(factual_match.group(1) if factual_match else None),
+        "credibility": _clean_rating_value(
+            credibility_match.group(1) if credibility_match else None
+        ),
+    }
+
+
+def _check_outlet_uncached(name: str) -> dict:
+    headers = {"User-Agent": MBFC_USER_AGENT, "Accept": "text/html"}
+    try:
+        search_url = MBFC_SEARCH_URL.format(query=quote_plus(name))
+        search_resp = requests.get(search_url, headers=headers, timeout=MBFC_HTTP_TIMEOUT)
+        if search_resp.status_code != 200:
+            return {"found": False}
+        detail_url = _find_first_mbfc_result_url(search_resp.text)
+        if not detail_url:
+            return {"found": False}
+        detail_resp = requests.get(detail_url, headers=headers, timeout=MBFC_HTTP_TIMEOUT)
+        if detail_resp.status_code != 200:
+            return {"found": False}
+        parsed = _parse_mbfc_detail(detail_resp.text)
+        if not any(parsed.values()):
+            # Detail page reachable but no ratings extractable: report not-found
+            # so the UI falls back to manual review instead of showing blanks.
+            return {"found": False}
+        return {
+            "found": True,
+            "outlet": name,
+            "bias": parsed["bias"],
+            "factual": parsed["factual"],
+            "credibility": parsed["credibility"],
+            "mbfc_url": detail_url,
+        }
+    except requests.RequestException:
+        return {"found": False}
+    except Exception:
+        return {"found": False}
+
+
+def _check_outlet_cached(name: str) -> dict:
+    key = name.strip().lower()
+    now = time.time()
+    with _outlet_lookup_lock:
+        cached = _outlet_lookup_cache.get(key)
+        if cached and cached[0] > now:
+            return dict(cached[1])
+    result = _check_outlet_uncached(name)
+    with _outlet_lookup_lock:
+        _outlet_lookup_cache[key] = (now + MBFC_CACHE_TTL_SECONDS, dict(result))
+    return result
+
+
+class SubmitOutletPayload(BaseModel):
+    name: str
+    domain: str
+    reason: str
+
+
+def _append_pending_outlet(payload: SubmitOutletPayload) -> None:
+    record = {
+        "name": payload.name.strip(),
+        "domain": payload.domain.strip(),
+        "reason": payload.reason.strip(),
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _pending_outlets_lock:
+        existing: list[dict] = []
+        if PENDING_OUTLETS_PATH.exists():
+            try:
+                raw = PENDING_OUTLETS_PATH.read_text(encoding="utf-8")
+                parsed = json.loads(raw) if raw.strip() else []
+                if isinstance(parsed, list):
+                    existing = parsed
+            except Exception:
+                existing = []
+        existing.append(record)
+        PENDING_OUTLETS_PATH.write_text(
+            json.dumps(existing, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+
+@router.get("/check-outlet")
+def check_outlet(name: str = Query(..., min_length=1, max_length=200)) -> dict:
+    cleaned = name.strip()
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Outlet name must not be empty.")
+    return _check_outlet_cached(cleaned)
+
+
+@router.post("/submit-outlet")
+def submit_outlet(payload: SubmitOutletPayload) -> dict:
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Outlet name must not be empty.")
+    if not payload.domain.strip():
+        raise HTTPException(status_code=400, detail="Domain must not be empty.")
+    if not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Reason must not be empty.")
+    _append_pending_outlet(payload)
+    return {"success": True}
 
 
 app.include_router(router)

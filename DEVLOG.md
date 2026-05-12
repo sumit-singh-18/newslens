@@ -886,3 +886,20 @@ Added **`OutletsPage`** with **`CREDIBLE_SOURCE_TIERS`** in **`frontend/app.js`*
 - **`npm run build`** (**`frontend/`**): success.
 
 
+## [2026-05-11] — Suggest an Outlet (MBFC lookup + manual submission)
+
+### Backend
+- **`backend/main.py`**: Added **`GET /check-outlet?name=...`** — scrapes **`https://mediabiasfactcheck.com/?s={query}`**, follows the first detail link, and parses **Bias Rating**, **Factual Reporting**, **Credibility Rating** with tolerant regexes against the page's text. Returns **`{ found, outlet, bias, factual, credibility, mbfc_url }`** or **`{ found: false }`**. Results cached in-memory per lowercased outlet name for **24h** behind a **`threading.Lock`**. Custom **User-Agent** + **10s** timeout; all network/parse failures degrade to **`{ found: false }`** so the UI never crashes.
+- **`backend/main.py`**: Added **`POST /submit-outlet`** — Pydantic **`SubmitOutletPayload {name, domain, reason}`** appended to **`backend/pending_outlets.json`** with a UTC **`submitted_at`** timestamp; file write is serialized with a lock and tolerates an empty/corrupt file. Returns **`{ success: true }`**.
+- **`backend/requirements.txt`**: Added **`beautifulsoup4==4.13.4`** (HTML parsing for MBFC results); **`requests`** was already pinned.
+
+### Frontend
+- **`frontend/app.js`**: New **`SuggestOutletSection`** component mounted at the bottom of **`OutletsPage`**. Flow: outlet-name input → **Check Credibility** button calls **`GET /check-outlet`** with a loading state → on **found**, shows a result card (bold name, Bias | Factual line, color-coded Credibility — green for HIGH, amber for MEDIUM/MIXED — and a "Source: Media Bias Fact Check" link); on **not found**, shows an inline notice prompting manual review. In both cases a domain input + reason textarea + **Submit for Review** button posts to **`/submit-outlet`** and renders "Thanks! We'll review your suggestion." on success. All fetch failures surface inline messages; the page never crashes.
+- **`frontend/styles.css`**: Added **`.suggest-outlet-*`** styles (glass card matching tier sections, pill buttons reusing **`--cta-navy`**, color-coded credibility, responsive single-column lookup row below 560px).
+
+### Verification
+- **`curl /check-outlet?name=The%20Hindu`** → **`{ found: true, bias: "LEFT-CENTER", factual: "MOSTLY FACTUAL", credibility: "HIGH CREDIBILITY", mbfc_url: "https://mediabiasfactcheck.com/the-hindu/" }`**.
+- **`curl -X POST /submit-outlet`** with a sample body → **`{ success: true }`** and entry appended to **`backend/pending_outlets.json`** (smoke-test entry cleared after verification).
+- **`npm run build`** (**`frontend/`**): success (**`bundle.js`** 2.1 MB).
+
+

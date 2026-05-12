@@ -2104,6 +2104,244 @@ function Header({ onStartAnalysis, activeNav }) {
   );
 }
 
+function credibilityTone(credibility) {
+  if (typeof credibility !== "string") return "neutral";
+  const upper = credibility.trim().toUpperCase();
+  if (!upper) return "neutral";
+  if (upper.includes("HIGH")) return "good";
+  if (upper.includes("MEDIUM") || upper.includes("MIXED")) return "warn";
+  return "neutral";
+}
+
+function SuggestOutletSection() {
+  const [name, setName] = useState("");
+  const [lookup, setLookup] = useState(null);
+  const [domain, setDomain] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitState, setSubmitState] = useState(null);
+
+  const loadingLookup = lookup === "loading";
+  const lookupError =
+    lookup && typeof lookup === "object" && "error" in lookup ? lookup.error : null;
+  const lookupResult =
+    lookup && typeof lookup === "object" && !("error" in lookup) ? lookup : null;
+  const isFound = lookupResult?.found === true;
+  const isNotFound = lookupResult?.found === false;
+  const showSubmitForm = (isFound || isNotFound) && submitState !== "success";
+
+  async function handleCheck() {
+    const cleaned = name.trim();
+    if (!cleaned) return;
+    setLookup("loading");
+    setSubmitState(null);
+    try {
+      const res = await fetch(
+        `${API_BASE}/check-outlet?name=${encodeURIComponent(cleaned)}`
+      );
+      if (!res.ok) {
+        throw new Error("Credibility lookup is unavailable right now.");
+      }
+      const data = await res.json();
+      setLookup(data);
+    } catch (err) {
+      setLookup({
+        error:
+          err instanceof Error && err.message
+            ? err.message
+            : "Could not reach the credibility lookup right now.",
+      });
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    const trimmedDomain = domain.trim();
+    const trimmedReason = reason.trim();
+    if (!trimmedName || !trimmedDomain || !trimmedReason) return;
+    setSubmitState("loading");
+    try {
+      const res = await fetch(`${API_BASE}/submit-outlet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmedName,
+          domain: trimmedDomain,
+          reason: trimmedReason,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Submission failed. Please try again in a moment.");
+      }
+      const data = await res.json();
+      if (!data || !data.success) {
+        throw new Error("Submission failed. Please try again in a moment.");
+      }
+      setSubmitState("success");
+    } catch (err) {
+      setSubmitState({
+        error:
+          err instanceof Error && err.message
+            ? err.message
+            : "We could not submit your suggestion right now.",
+      });
+    }
+  }
+
+  return (
+    <section
+      className="suggest-outlet-section"
+      aria-labelledby="suggest-outlet-heading"
+    >
+      <h2 id="suggest-outlet-heading" className="suggest-outlet-title">
+        Suggest an Outlet
+      </h2>
+      <p className="suggest-outlet-subtitle">
+        Know a credible source we&apos;re missing?
+      </p>
+
+      <div className="suggest-outlet-lookup-row">
+        <input
+          type="text"
+          className="suggest-outlet-input"
+          placeholder="Outlet name (e.g. The Hindu)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          aria-label="Outlet name"
+        />
+        <button
+          type="button"
+          className="suggest-outlet-button"
+          onClick={handleCheck}
+          disabled={!name.trim() || loadingLookup}
+        >
+          {loadingLookup ? "Checking…" : "Check Credibility"}
+        </button>
+      </div>
+
+      {lookupError && (
+        <p className="suggest-outlet-inline-error" role="status">
+          {lookupError}
+        </p>
+      )}
+
+      {isFound && (
+        <div className="suggest-outlet-result-card">
+          <p className="suggest-outlet-result-name">
+            {lookupResult.outlet || name.trim()}
+          </p>
+          <p className="suggest-outlet-result-meta">
+            <span>
+              Bias: <strong>{lookupResult.bias || "—"}</strong>
+            </span>
+            <span aria-hidden="true" className="suggest-outlet-divider">
+              |
+            </span>
+            <span>
+              Factual: <strong>{lookupResult.factual || "—"}</strong>
+            </span>
+          </p>
+          {lookupResult.credibility && (
+            <p
+              className={`suggest-outlet-cred suggest-outlet-cred--${credibilityTone(
+                lookupResult.credibility
+              )}`}
+            >
+              Credibility: <strong>{lookupResult.credibility}</strong>
+            </p>
+          )}
+          {lookupResult.mbfc_url ? (
+            <p className="suggest-outlet-source-note">
+              Source:{" "}
+              <a
+                href={lookupResult.mbfc_url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Media Bias Fact Check
+              </a>
+            </p>
+          ) : (
+            <p className="suggest-outlet-source-note">
+              Source: Media Bias Fact Check
+            </p>
+          )}
+        </div>
+      )}
+
+      {isNotFound && (
+        <p className="suggest-outlet-notfound" role="status">
+          Not found on Media Bias Fact Check. You can still submit it for manual
+          review.
+        </p>
+      )}
+
+      {showSubmitForm && (
+        <form className="suggest-outlet-form" onSubmit={handleSubmit}>
+          <label
+            className="suggest-outlet-label"
+            htmlFor="suggest-outlet-domain"
+          >
+            Outlet domain
+          </label>
+          <input
+            id="suggest-outlet-domain"
+            type="text"
+            className="suggest-outlet-input"
+            placeholder="thehindu.com"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            required
+          />
+
+          <label
+            className="suggest-outlet-label"
+            htmlFor="suggest-outlet-reason"
+          >
+            Why should we add this?
+          </label>
+          <textarea
+            id="suggest-outlet-reason"
+            className="suggest-outlet-textarea"
+            rows={4}
+            placeholder="Editorial standards, factual reporting record, regional importance…"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+          />
+
+          <button
+            type="submit"
+            className="suggest-outlet-button suggest-outlet-button--primary"
+            disabled={
+              submitState === "loading" ||
+              !domain.trim() ||
+              !reason.trim() ||
+              !name.trim()
+            }
+          >
+            {submitState === "loading" ? "Submitting…" : "Submit for Review"}
+          </button>
+
+          {submitState &&
+            typeof submitState === "object" &&
+            submitState.error && (
+              <p className="suggest-outlet-inline-error" role="status">
+                {submitState.error}
+              </p>
+            )}
+        </form>
+      )}
+
+      {submitState === "success" && (
+        <p className="suggest-outlet-success" role="status">
+          Thanks! We&apos;ll review your suggestion.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function OutletsPage() {
   return (
     <main className="outlets-directory-page" aria-labelledby="verified-outlets-h1">
@@ -2151,6 +2389,8 @@ function OutletsPage() {
         Don&apos;t see an outlet you trust? Our source list is regularly reviewed. Inclusion criteria: established editorial
         standards, factual reporting record, and significant readership.
       </p>
+
+      <SuggestOutletSection />
     </main>
   );
 }
