@@ -2114,8 +2114,30 @@ function credibilityTone(credibility) {
   return "neutral";
 }
 
+/**
+ * Case-insensitive match of a user-typed outlet name against the verified
+ * `CREDIBLE_SOURCE_TIERS` list (compared against both display names and domains,
+ * with a leading `www.` stripped). Returns `{ tier, name }` on hit, else `null`.
+ */
+function findOutletInTiers(query) {
+  if (typeof query !== "string") return null;
+  const normalized = query.trim().toLowerCase().replace(/^www\./, "");
+  if (!normalized) return null;
+  for (const tier of CREDIBLE_SOURCE_TIERS) {
+    for (const outlet of tier.outlets) {
+      const domain = String(outlet.domain || "").toLowerCase();
+      const displayName = String(outlet.name || "").toLowerCase();
+      if (normalized === domain || normalized === displayName) {
+        return { tier: tier.tier, name: outlet.name };
+      }
+    }
+  }
+  return null;
+}
+
 function SuggestOutletSection() {
   const [name, setName] = useState("");
+  const [searchedName, setSearchedName] = useState("");
   const [lookup, setLookup] = useState(null);
   const [domain, setDomain] = useState("");
   const [reason, setReason] = useState("");
@@ -2128,13 +2150,32 @@ function SuggestOutletSection() {
     lookup && typeof lookup === "object" && !("error" in lookup) ? lookup : null;
   const isFound = lookupResult?.found === true;
   const isNotFound = lookupResult?.found === false;
-  const showSubmitForm = (isFound || isNotFound) && submitState !== "success";
+
+  /** Compare the searched name (and any MBFC-canonical outlet name) against our verified list. */
+  const existingMatch = useMemo(() => {
+    if (!lookupResult) return null;
+    const candidates = [];
+    if (typeof lookupResult.outlet === "string") candidates.push(lookupResult.outlet);
+    if (searchedName) candidates.push(searchedName);
+    for (const candidate of candidates) {
+      const match = findOutletInTiers(candidate);
+      if (match) return match;
+    }
+    return null;
+  }, [lookupResult, searchedName]);
+
+  const showSubmitForm =
+    (isFound || isNotFound) && !existingMatch && submitState !== "success";
 
   async function handleCheck() {
     const cleaned = name.trim();
     if (!cleaned) return;
-    setLookup("loading");
+    // FIX 2: reset form + previous result between searches.
+    setDomain("");
+    setReason("");
     setSubmitState(null);
+    setSearchedName(cleaned);
+    setLookup("loading");
     try {
       const res = await fetch(
         `${API_BASE}/check-outlet?name=${encodeURIComponent(cleaned)}`
@@ -2267,11 +2308,23 @@ function SuggestOutletSection() {
         </div>
       )}
 
-      {isNotFound && (
+      {isNotFound && !existingMatch && (
         <p className="suggest-outlet-notfound" role="status">
           Not found on Media Bias Fact Check. You can still submit it for manual
           review.
         </p>
+      )}
+
+      {existingMatch && (
+        <div className="suggest-outlet-success-card" role="status">
+          <span className="suggest-outlet-success-check" aria-hidden="true">
+            ✓
+          </span>
+          <p className="suggest-outlet-success-message">
+            {existingMatch.name} is already in our verified sources list! You
+            can find it in Tier {existingMatch.tier} above.
+          </p>
+        </div>
       )}
 
       {showSubmitForm && (
