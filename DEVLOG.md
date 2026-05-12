@@ -935,3 +935,8 @@ Visuals: full-width container, 6 px / 3 px-radius track on **`#E5E7EB`** with a 
 Revert: uncomment the OLD ternary inside the button, delete the inline **`style={loadingLookup ? { opacity: 0.6 } : undefined}`** on the button, and remove the **`PROGRESS_LABELS`** constant, the two **`useEffect`**s + **`progressPhase`**/**`progressLabelIdx`** state, and the **`{progressVisible && (...)}`** block. **`npm run build`** (**`frontend/`**): success (**`bundle.js`** 2.1 MB), no lint errors.
 
 
+## [2026-05-11] — Drop explicit `torch` pin from backend requirements
+
+Render build kept failing on **`torch==2.11.0`** (the version pinned in the previous **`fix: torch version for Render`** commit doesn't resolve on PyPI). Audited the backend for direct **`torch`** usage: **`rg "import torch|from torch" backend/`** returned **zero** matches — **`backend/nlp_pipeline.py`** only uses **`transformers`** (**`AutoTokenizer`**, **`AutoModelForSequenceClassification`**, **`pipeline`**) and passes **`device=-1`** for CPU. Removed the **`torch==2.11.0`** line from **`backend/requirements.txt`** entirely; **`pip install -r backend/requirements.txt`** locally returned exit code 0. Committed as **`fix: torch version for Render`** (**`5081441`**) and pushed to **`origin/main`**. Caveat: **`transformers`** still needs a tensor backend at runtime — if Render's clean install lacks **`torch`**, model loading will fail and we'll need to add **`torch`** back with a version that exists on PyPI (e.g. **`torch==2.7.0`**, **`2.7.1`**, or whichever wheel resolves for the Render Python).
+
+
