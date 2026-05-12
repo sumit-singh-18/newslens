@@ -53941,6 +53941,7 @@ function credibilityTone(credibility) {
   if (!upper) return "neutral";
   if (upper.includes("HIGH")) return "good";
   if (upper.includes("MEDIUM") || upper.includes("MIXED")) return "warn";
+  if (upper.includes("LOW")) return "bad";
   return "neutral";
 }
 function SuggestOutletSection() {
@@ -54012,14 +54013,13 @@ function SuggestOutletSection() {
       className: "suggest-outlet-section",
       "aria-labelledby": "suggest-outlet-heading"
     },
-    /* @__PURE__ */ import_react36.default.createElement("h2", { id: "suggest-outlet-heading", className: "suggest-outlet-title" }, "Suggest an Outlet"),
-    /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-subtitle" }, "Know a credible source we're missing?"),
+    /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-header" }, /* @__PURE__ */ import_react36.default.createElement("h2", { id: "suggest-outlet-heading", className: "suggest-outlet-title" }, "Suggest an Outlet"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-subtitle" }, "Know a credible source we're missing?")),
     /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-lookup-row" }, /* @__PURE__ */ import_react36.default.createElement(
       "input",
       {
         type: "text",
         className: "suggest-outlet-input",
-        placeholder: "Outlet name (e.g. The Hindu)",
+        placeholder: "e.g. The Wire, Africa Report...",
         value: name,
         onChange: (e) => setName(e.target.value),
         "aria-label": "Outlet name"
@@ -54035,32 +54035,33 @@ function SuggestOutletSection() {
       loadingLookup ? "Checking\u2026" : "Check Credibility"
     )),
     lookupError && /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-inline-error", role: "status" }, lookupError),
-    isFound && /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-result-card" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-result-name" }, lookupResult.outlet || name.trim()), /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-result-meta" }, /* @__PURE__ */ import_react36.default.createElement("span", null, "Bias: ", /* @__PURE__ */ import_react36.default.createElement("strong", null, lookupResult.bias || "\u2014")), /* @__PURE__ */ import_react36.default.createElement("span", { "aria-hidden": "true", className: "suggest-outlet-divider" }, "|"), /* @__PURE__ */ import_react36.default.createElement("span", null, "Factual: ", /* @__PURE__ */ import_react36.default.createElement("strong", null, lookupResult.factual || "\u2014"))), lookupResult.credibility && /* @__PURE__ */ import_react36.default.createElement(
-      "p",
+    isFound && /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-result-card" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-result-name" }, lookupResult.outlet || name.trim()), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-pill-row" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "suggest-outlet-pill" }, "Bias: ", lookupResult.bias || "\u2014"), /* @__PURE__ */ import_react36.default.createElement("span", { className: "suggest-outlet-pill" }, "Factual: ", lookupResult.factual || "\u2014"), lookupResult.credibility && /* @__PURE__ */ import_react36.default.createElement(
+      "span",
       {
-        className: `suggest-outlet-cred suggest-outlet-cred--${credibilityTone(
+        className: `suggest-outlet-pill suggest-outlet-pill--${credibilityTone(
           lookupResult.credibility
         )}`
       },
       "Credibility: ",
-      /* @__PURE__ */ import_react36.default.createElement("strong", null, lookupResult.credibility)
-    ), lookupResult.mbfc_url ? /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-source-note" }, "Source:", " ", /* @__PURE__ */ import_react36.default.createElement(
+      lookupResult.credibility
+    )), lookupResult.mbfc_url ? /* @__PURE__ */ import_react36.default.createElement(
       "a",
       {
+        className: "suggest-outlet-source-link",
         href: lookupResult.mbfc_url,
         target: "_blank",
         rel: "noopener noreferrer"
       },
-      "Media Bias Fact Check"
-    )) : /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-source-note" }, "Source: Media Bias Fact Check")),
+      "Source: Media Bias Fact Check \u2192"
+    ) : /* @__PURE__ */ import_react36.default.createElement("span", { className: "suggest-outlet-source-link suggest-outlet-source-link--inert" }, "Source: Media Bias Fact Check")),
     isNotFound && /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-notfound", role: "status" }, "Not found on Media Bias Fact Check. You can still submit it for manual review."),
-    showSubmitForm && /* @__PURE__ */ import_react36.default.createElement("form", { className: "suggest-outlet-form", onSubmit: handleSubmit }, /* @__PURE__ */ import_react36.default.createElement(
+    showSubmitForm && /* @__PURE__ */ import_react36.default.createElement("form", { className: "suggest-outlet-form", onSubmit: handleSubmit }, /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-field" }, /* @__PURE__ */ import_react36.default.createElement(
       "label",
       {
         className: "suggest-outlet-label",
         htmlFor: "suggest-outlet-domain"
       },
-      "Outlet domain"
+      "Domain"
     ), /* @__PURE__ */ import_react36.default.createElement(
       "input",
       {
@@ -54072,25 +54073,25 @@ function SuggestOutletSection() {
         onChange: (e) => setDomain(e.target.value),
         required: true
       }
-    ), /* @__PURE__ */ import_react36.default.createElement(
+    )), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-field" }, /* @__PURE__ */ import_react36.default.createElement(
       "label",
       {
         className: "suggest-outlet-label",
         htmlFor: "suggest-outlet-reason"
       },
-      "Why should we add this?"
+      "Why add this?"
     ), /* @__PURE__ */ import_react36.default.createElement(
       "textarea",
       {
         id: "suggest-outlet-reason",
         className: "suggest-outlet-textarea",
-        rows: 4,
-        placeholder: "Editorial standards, factual reporting record, regional importance\u2026",
+        rows: 3,
+        placeholder: "Editorial standards, regional importance...",
         value: reason,
         onChange: (e) => setReason(e.target.value),
         required: true
       }
-    ), /* @__PURE__ */ import_react36.default.createElement(
+    )), /* @__PURE__ */ import_react36.default.createElement(
       "button",
       {
         type: "submit",
@@ -54099,7 +54100,7 @@ function SuggestOutletSection() {
       },
       submitState === "loading" ? "Submitting\u2026" : "Submit for Review"
     ), submitState && typeof submitState === "object" && submitState.error && /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-inline-error", role: "status" }, submitState.error)),
-    submitState === "success" && /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-success", role: "status" }, "Thanks! We'll review your suggestion.")
+    submitState === "success" && /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-success-card", role: "status" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "suggest-outlet-success-check", "aria-hidden": "true" }, "\u2713"), /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-success-message" }, "Thanks! We'll review your suggestion."))
   );
 }
 function OutletsPage() {
