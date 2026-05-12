@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "name": "africa report",
+    "domain": "https://www.theafricareport.com/",
+    "reason": "the MBFC says it is high credible and country ranks goods in press freedom.",
+    "submitted_at": "2026-05-12T01:42:35.112640+00:00"
+  },
+  {
+    "name": "the wire",
+    "domain": "djsk.com",
+    "reason": "sdsfsd",
+    "submitted_at": "2026-05-12T01:46:02.935927+00:00"
+  }
+]
