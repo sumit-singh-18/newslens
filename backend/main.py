@@ -25,9 +25,31 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./newslens.db")
 
-# Comma-separated frontend origins (e.g. Vite dev + Vercel). Default local Vite URL.
-_allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+# Comma-separated frontend origins (e.g. Vite dev + Vercel). Browsers treat
+# localhost and 127.0.0.1 as distinct CORS origins, so both are allowed by default.
+_allowed_origins_raw = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+)
 _CORS_ALLOW_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
+
+# #region agent log
+try:
+    import json as _agent_json, time as _agent_time
+    with open("/Users/sumit/Documents/NewsLens/.cursor/debug-27d638.log", "a") as _agent_f:
+        _agent_f.write(_agent_json.dumps({
+            "sessionId": "27d638",
+            "id": f"log_{int(_agent_time.time()*1000)}_cors_origins",
+            "timestamp": int(_agent_time.time() * 1000),
+            "location": "backend/main.py:cors_setup",
+            "message": "CORS allow_origins computed at startup",
+            "hypothesisId": "A",
+            "runId": "run1",
+            "data": {"allow_origins": _CORS_ALLOW_ORIGINS},
+        }) + "\n")
+except Exception:
+    pass
+# #endregion
 
 from .bias_utils import (
     bias_distribution_from_outlets,
