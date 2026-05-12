@@ -53944,6 +53944,12 @@ function credibilityTone(credibility) {
   if (upper.includes("LOW")) return "bad";
   return "neutral";
 }
+var PROGRESS_LABELS = [
+  "Connecting to Media Bias Fact Check...",
+  "Analyzing credibility signals...",
+  "Fetching bias rating...",
+  "Almost done..."
+];
 function findOutletInTiers(query) {
   if (typeof query !== "string") return null;
   const normalized = query.trim().toLowerCase().replace(/^www\./, "");
@@ -53983,6 +53989,48 @@ function SuggestOutletSection() {
     return null;
   }, [lookupResult, searchedName]);
   const showSubmitForm = (isFound || isNotFound) && !existingMatch && submitState !== "success";
+  const [progressPhase, setProgressPhase] = (0, import_react36.useState)("idle");
+  const [progressLabelIdx, setProgressLabelIdx] = (0, import_react36.useState)(0);
+  (0, import_react36.useEffect)(() => {
+    if (loadingLookup) {
+      setProgressPhase("starting");
+      setProgressLabelIdx(0);
+      const raf = requestAnimationFrame(() => setProgressPhase("filling"));
+      return () => cancelAnimationFrame(raf);
+    }
+    setProgressPhase((p) => p === "idle" ? "idle" : "completing");
+    const fadeTimer = setTimeout(() => {
+      setProgressPhase((p) => p === "idle" ? "idle" : "fading");
+    }, 250);
+    const hideTimer = setTimeout(() => setProgressPhase("idle"), 600);
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(hideTimer);
+    };
+  }, [loadingLookup]);
+  (0, import_react36.useEffect)(() => {
+    if (!loadingLookup) return void 0;
+    const t = setInterval(() => {
+      setProgressLabelIdx((i) => (i + 1) % PROGRESS_LABELS.length);
+    }, 800);
+    return () => clearInterval(t);
+  }, [loadingLookup]);
+  const progressVisible = progressPhase !== "idle";
+  const progressFillStyle = (() => {
+    switch (progressPhase) {
+      case "starting":
+        return { width: "0%", transition: "none" };
+      case "filling":
+        return { width: "90%", transition: "width 2.5s ease-out" };
+      case "completing":
+        return { width: "100%", transition: "width 0.25s ease-out" };
+      case "fading":
+        return { width: "100%", transition: "none" };
+      default:
+        return { width: "0%" };
+    }
+  })();
+  const progressContainerOpacity = progressPhase === "fading" ? 0 : 1;
   async function handleCheck() {
     const cleaned = name.trim();
     if (!cleaned) return;
@@ -54060,10 +54108,62 @@ function SuggestOutletSection() {
         type: "button",
         className: "suggest-outlet-button",
         onClick: handleCheck,
-        disabled: !name.trim() || loadingLookup
+        disabled: !name.trim() || loadingLookup,
+        style: loadingLookup ? { opacity: 0.6 } : void 0
       },
-      loadingLookup ? "Checking\u2026" : "Check Credibility"
+      "Check Credibility"
     )),
+    progressVisible && /* @__PURE__ */ import_react36.default.createElement(
+      "div",
+      {
+        className: "suggest-outlet-progress",
+        role: "status",
+        "aria-live": "polite",
+        style: {
+          marginTop: 12,
+          width: "100%",
+          opacity: progressContainerOpacity,
+          transition: "opacity 0.3s ease-out"
+        }
+      },
+      /* @__PURE__ */ import_react36.default.createElement(
+        "div",
+        {
+          "aria-hidden": "true",
+          style: {
+            width: "100%",
+            height: 6,
+            borderRadius: 3,
+            background: "#E5E7EB",
+            overflow: "hidden"
+          }
+        },
+        /* @__PURE__ */ import_react36.default.createElement(
+          "div",
+          {
+            style: {
+              height: "100%",
+              borderRadius: 3,
+              background: "linear-gradient(90deg, #3B82F6 0%, #1A1A2E 100%)",
+              ...progressFillStyle
+            }
+          }
+        )
+      ),
+      /* @__PURE__ */ import_react36.default.createElement(
+        "p",
+        {
+          style: {
+            marginTop: 8,
+            marginBottom: 0,
+            fontSize: "0.75rem",
+            lineHeight: 1.4,
+            color: "#6B7280"
+          }
+        },
+        PROGRESS_LABELS[progressLabelIdx]
+      )
+    ),
     lookupError && /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-inline-error", role: "status" }, lookupError),
     isFound && /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-result-card" }, /* @__PURE__ */ import_react36.default.createElement("p", { className: "suggest-outlet-result-name" }, lookupResult.outlet || name.trim()), /* @__PURE__ */ import_react36.default.createElement("div", { className: "suggest-outlet-pill-row" }, /* @__PURE__ */ import_react36.default.createElement("span", { className: "suggest-outlet-pill" }, "Bias: ", lookupResult.bias || "\u2014"), /* @__PURE__ */ import_react36.default.createElement("span", { className: "suggest-outlet-pill" }, "Factual: ", lookupResult.factual || "\u2014"), lookupResult.credibility && /* @__PURE__ */ import_react36.default.createElement(
       "span",
