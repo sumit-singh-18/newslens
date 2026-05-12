@@ -11,8 +11,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
-from .bias_utils import bias_label_from_axis
-from .database import Article, ArticleScore, normalize_topic
+from bias_utils import bias_label_from_axis
+from database import Article, ArticleScore, normalize_topic
 
 logger = logging.getLogger(__name__)
 

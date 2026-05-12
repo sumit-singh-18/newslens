@@ -38,16 +38,16 @@ _allowed_origins_raw = os.getenv(
 )
 _CORS_ALLOW_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
 
-from .bias_utils import (
+from bias_utils import (
     bias_distribution_from_outlets,
     bias_label_from_axis,
     bias_spectrum_bucket,
     extrem_bias_outlets,
 )
-from .credible_domains import CREDIBLE_DOMAINS
-from .database import Article, ArticleScore, TopicAnalysis, create_tables, get_db, normalize_topic
-from .framing_extract import clean_text, get_framing_summary
-from .news_fetcher import (
+from credible_domains import CREDIBLE_DOMAINS
+from database import Article, ArticleScore, TopicAnalysis, create_tables, get_db, normalize_topic
+from framing_extract import clean_text, get_framing_summary
+from news_fetcher import (
     MIN_RELEVANCE_SCORE,
     NewsFetcherError,
     compute_selected_outlets_from_db,
@@ -65,7 +65,7 @@ DEFAULT_TRENDING_FALLBACK = (
     "artificial intelligence",
     "us-iran conflict",
 )
-from .nlp_pipeline import NLPPipeline
+from nlp_pipeline import NLPPipeline
 
 _nlp_pipeline: NLPPipeline | None = None
 

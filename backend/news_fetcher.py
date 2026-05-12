@@ -13,10 +13,10 @@ from dotenv import load_dotenv
 from sqlalchemy import delete, exists, func, select
 from sqlalchemy.orm import Session
 
-from .credible_domains import get_domains_string
-from .database import Article, ArticleScore, TopicOutletFraming, normalize_topic
-from .framing_extract import clean_text
-from .nlp_pipeline import NLPPipeline
+from credible_domains import get_domains_string
+from database import Article, ArticleScore, TopicOutletFraming, normalize_topic
+from framing_extract import clean_text
+from nlp_pipeline import NLPPipeline
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
