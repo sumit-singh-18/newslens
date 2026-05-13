@@ -29,6 +29,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./newslens.db")
+port = int(os.getenv("PORT", 7860))
 
 # Comma-separated frontend origins (e.g. Vite dev + Vercel). Browsers treat
 # localhost and 127.0.0.1 as distinct CORS origins, so both are allowed by default.
@@ -37,6 +38,8 @@ _allowed_origins_raw = os.getenv(
     "http://localhost:5173,http://127.0.0.1:5173",
 )
 _CORS_ALLOW_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
+# HuggingFace Spaces frontends: https://<user>-<space>.hf.space
+_CORS_HF_SPACE_REGEX = r"https://[\w.-]+\.hf\.space$"
 
 from bias_utils import (
     bias_distribution_from_outlets,
@@ -82,6 +85,7 @@ app = FastAPI(title="NewsLens Backend", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ALLOW_ORIGINS,
+    allow_origin_regex=_CORS_HF_SPACE_REGEX,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1389,3 +1393,9 @@ def submit_outlet(payload: SubmitOutletPayload) -> dict:
 
 
 app.include_router(router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
