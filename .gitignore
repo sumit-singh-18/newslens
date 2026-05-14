@@ -57,3 +57,4 @@ hub/
 *.safetensors
 *.pt
 *.onnx
+frontend/node_modules/
