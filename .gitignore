@@ -58,3 +58,4 @@ hub/
 *.pt
 *.onnx
 frontend/node_modules/
+frontend/esbuild
