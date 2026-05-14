@@ -52479,7 +52479,7 @@ fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
   })
 }).catch(() => {
 });
-var API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "http://127.0.0.1:8000" : "https://YOUR_RENDER_URL.onrender.com";
+var API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "http://127.0.0.1:8000" : "https://sumitssingh-newslens-backend.hf.space";
 var READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 var DEFAULT_SERIES_LABEL = "14d";
 function normalizeRecentSearchDisplay(raw) {

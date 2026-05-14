@@ -38,7 +38,7 @@ fetch("http://127.0.0.1:7528/ingest/89d055b3-625f-4e57-9ed5-0d70b4272673", {
 const API_BASE =
   window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
     ? "http://127.0.0.1:8000"
-    : "https://YOUR_RENDER_URL.onrender.com";
+    : "https://sumitssingh-newslens-backend.hf.space";
 const READ_ACROSS_READ_PREFIX = "newslens-read-across-read";
 const DEFAULT_SERIES_LABEL = "14d";
 

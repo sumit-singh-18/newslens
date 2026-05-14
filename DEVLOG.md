@@ -965,3 +965,8 @@ Added **`backend/Dockerfile`** (**`python:3.11-slim`**, **`WORKDIR /app`**, **`E
 Replaced **`backend/Dockerfile`** with HF-oriented image: **`gcc`**, **`g++`**, **`git`**, pip **`--timeout=120`**, **`ENV PORT=7860`**, **`ENV PYTHONPATH=/app`**, shell **`CMD`** (**`uvicorn`** with **`${PORT}`**, **`--workers 1`**). Expanded **`backend/.dockerignore`** (**`*.log`**, **`.venv`**, **`venv`**). Added **`backend/README.md`** with Spaces YAML frontmatter (**`sdk: docker`**). **`requirements.txt`**: **`torch==2.9.0`** (per policy when prior pin was not 2.9.0). **`main.py`**: default **`ALLOWED_ORIGINS`** now includes **`https://*.hf.space`** alongside localhost dev URLs (existing **`allow_origin_regex`** for **`\.hf\.space$`** unchanged). Local **`docker build -t newslens-test .`** from **`backend/`** succeeded (**`torch-2.9.0`** on Docker Linux). Committed as **`feat: Docker setup for HuggingFace Spaces`**.
 
 
+## [2026-05-13] — Frontend API base → HuggingFace Space
+
+**`frontend/app.js`**: production **`API_BASE`** now **`https://sumitssingh-newslens-backend.hf.space`** (localhost / **`127.0.0.1`** unchanged → **`http://127.0.0.1:8000`**). **`npm run build`** succeeded. Committed **`feat: point frontend to HuggingFace backend`**.
+
+
