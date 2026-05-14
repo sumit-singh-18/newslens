@@ -35,7 +35,7 @@ port = int(os.getenv("PORT", 7860))
 # localhost and 127.0.0.1 as distinct CORS origins, so both are allowed by default.
 _allowed_origins_raw = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173",
+    "http://localhost:5173,http://127.0.0.1:5173,https://*.hf.space",
 )
 _CORS_ALLOW_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
 # HuggingFace Spaces frontends: https://<user>-<space>.hf.space

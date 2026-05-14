@@ -5,3 +5,6 @@ __pycache__
 *.db
 .pytest_cache
 tests/
+*.log
+.venv
+venv
