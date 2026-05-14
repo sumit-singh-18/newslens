@@ -49,4 +49,11 @@ Thumbs.db
 frontend/esbuild
 frontend/package/
 
-.hf-cache/frontend/node_modules
+.hf-cache/
+**/.hf-cache/
+hub/
+**/models--*/
+*.bin
+*.safetensors
+*.pt
+*.onnx
